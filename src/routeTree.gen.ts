@@ -9,38 +9,165 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthStudentsRouteImport } from './routes/_auth/students'
+import { Route as AuthSettingsRouteImport } from './routes/_auth/settings'
+import { Route as AuthReportsRouteImport } from './routes/_auth/reports'
+import { Route as AuthEnrollRouteImport } from './routes/_auth/enroll'
+import { Route as AuthDefaultersRouteImport } from './routes/_auth/defaulters'
+import { Route as AuthDashboardRouteImport } from './routes/_auth/dashboard'
+import { Route as AuthCoursesRouteImport } from './routes/_auth/courses'
+import { Route as AuthCollectRouteImport } from './routes/_auth/collect'
+import { Route as AuthAuditRouteImport } from './routes/_auth/audit'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/_auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthStudentsRoute = AuthStudentsRouteImport.update({
+  id: '/students',
+  path: '/students',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthSettingsRoute = AuthSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthReportsRoute = AuthReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthEnrollRoute = AuthEnrollRouteImport.update({
+  id: '/enroll',
+  path: '/enroll',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthDefaultersRoute = AuthDefaultersRouteImport.update({
+  id: '/defaulters',
+  path: '/defaulters',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthDashboardRoute = AuthDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthCoursesRoute = AuthCoursesRouteImport.update({
+  id: '/courses',
+  path: '/courses',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthCollectRoute = AuthCollectRouteImport.update({
+  id: '/collect',
+  path: '/collect',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthAuditRoute = AuthAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AuthRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/audit': typeof AuthAuditRoute
+  '/collect': typeof AuthCollectRoute
+  '/courses': typeof AuthCoursesRoute
+  '/dashboard': typeof AuthDashboardRoute
+  '/defaulters': typeof AuthDefaultersRoute
+  '/enroll': typeof AuthEnrollRoute
+  '/reports': typeof AuthReportsRoute
+  '/settings': typeof AuthSettingsRoute
+  '/students': typeof AuthStudentsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/audit': typeof AuthAuditRoute
+  '/collect': typeof AuthCollectRoute
+  '/courses': typeof AuthCoursesRoute
+  '/dashboard': typeof AuthDashboardRoute
+  '/defaulters': typeof AuthDefaultersRoute
+  '/enroll': typeof AuthEnrollRoute
+  '/reports': typeof AuthReportsRoute
+  '/settings': typeof AuthSettingsRoute
+  '/students': typeof AuthStudentsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_auth': typeof AuthRouteWithChildren
+  '/_auth/audit': typeof AuthAuditRoute
+  '/_auth/collect': typeof AuthCollectRoute
+  '/_auth/courses': typeof AuthCoursesRoute
+  '/_auth/dashboard': typeof AuthDashboardRoute
+  '/_auth/defaulters': typeof AuthDefaultersRoute
+  '/_auth/enroll': typeof AuthEnrollRoute
+  '/_auth/reports': typeof AuthReportsRoute
+  '/_auth/settings': typeof AuthSettingsRoute
+  '/_auth/students': typeof AuthStudentsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/audit'
+    | '/collect'
+    | '/courses'
+    | '/dashboard'
+    | '/defaulters'
+    | '/enroll'
+    | '/reports'
+    | '/settings'
+    | '/students'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/audit'
+    | '/collect'
+    | '/courses'
+    | '/dashboard'
+    | '/defaulters'
+    | '/enroll'
+    | '/reports'
+    | '/settings'
+    | '/students'
+  id:
+    | '__root__'
+    | '/'
+    | '/_auth'
+    | '/_auth/audit'
+    | '/_auth/collect'
+    | '/_auth/courses'
+    | '/_auth/dashboard'
+    | '/_auth/defaulters'
+    | '/_auth/enroll'
+    | '/_auth/reports'
+    | '/_auth/settings'
+    | '/_auth/students'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/_auth': {
+      id: '/_auth'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +175,101 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_auth/students': {
+      id: '/_auth/students'
+      path: '/students'
+      fullPath: '/students'
+      preLoaderRoute: typeof AuthStudentsRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/settings': {
+      id: '/_auth/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthSettingsRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/reports': {
+      id: '/_auth/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthReportsRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/enroll': {
+      id: '/_auth/enroll'
+      path: '/enroll'
+      fullPath: '/enroll'
+      preLoaderRoute: typeof AuthEnrollRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/defaulters': {
+      id: '/_auth/defaulters'
+      path: '/defaulters'
+      fullPath: '/defaulters'
+      preLoaderRoute: typeof AuthDefaultersRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/dashboard': {
+      id: '/_auth/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthDashboardRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/courses': {
+      id: '/_auth/courses'
+      path: '/courses'
+      fullPath: '/courses'
+      preLoaderRoute: typeof AuthCoursesRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/collect': {
+      id: '/_auth/collect'
+      path: '/collect'
+      fullPath: '/collect'
+      preLoaderRoute: typeof AuthCollectRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/audit': {
+      id: '/_auth/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuthAuditRouteImport
+      parentRoute: typeof AuthRoute
+    }
   }
 }
 
+interface AuthRouteChildren {
+  AuthAuditRoute: typeof AuthAuditRoute
+  AuthCollectRoute: typeof AuthCollectRoute
+  AuthCoursesRoute: typeof AuthCoursesRoute
+  AuthDashboardRoute: typeof AuthDashboardRoute
+  AuthDefaultersRoute: typeof AuthDefaultersRoute
+  AuthEnrollRoute: typeof AuthEnrollRoute
+  AuthReportsRoute: typeof AuthReportsRoute
+  AuthSettingsRoute: typeof AuthSettingsRoute
+  AuthStudentsRoute: typeof AuthStudentsRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthAuditRoute: AuthAuditRoute,
+  AuthCollectRoute: AuthCollectRoute,
+  AuthCoursesRoute: AuthCoursesRoute,
+  AuthDashboardRoute: AuthDashboardRoute,
+  AuthDefaultersRoute: AuthDefaultersRoute,
+  AuthEnrollRoute: AuthEnrollRoute,
+  AuthReportsRoute: AuthReportsRoute,
+  AuthSettingsRoute: AuthSettingsRoute,
+  AuthStudentsRoute: AuthStudentsRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
