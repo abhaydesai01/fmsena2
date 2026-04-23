@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
+import { PreviewErrorBoundary } from "@/components/app/PreviewFallback";
 
 import appCss from "../styles.css?url";
 
@@ -59,10 +60,61 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          // Last-resort safety net: if React never mounts (e.g. a chunk fails
+          // to load), show a fallback message after 8s instead of a blank pane.
+          dangerouslySetInnerHTML={{
+            __html: `window.addEventListener('load',function(){setTimeout(function(){var r=document.getElementById('preview-mount-watchdog');if(r&&!r.dataset.mounted){r.style.display='flex';}},8000);});`,
+          }}
+        />
       </head>
       <body>
+        <div
+          id="preview-mount-watchdog"
+          style={{
+            display: "none",
+            position: "fixed",
+            inset: 0,
+            zIndex: 2147483647,
+            background: "#fff",
+            color: "#111",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1.5rem",
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          }}
+        >
+          <div style={{ maxWidth: 480, textAlign: "center" }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+              Preview didn't load
+            </h1>
+            <p style={{ fontSize: 14, opacity: 0.7, marginBottom: 16 }}>
+              The app didn't finish mounting. Try a hard reload (Cmd/Ctrl+Shift+R) or
+              check the browser console for errors.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: 0,
+                background: "#111",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Reload
+            </button>
+          </div>
+        </div>
         {children}
         <Scripts />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `var w=document.getElementById('preview-mount-watchdog');if(w){w.dataset.mounted='1';}`,
+          }}
+        />
       </body>
     </html>
   );
@@ -73,11 +125,13 @@ function RootComponent() {
     defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
   }));
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Outlet />
-        <Toaster richColors position="top-right" />
-      </AuthProvider>
-    </QueryClientProvider>
+    <PreviewErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Outlet />
+          <Toaster richColors position="top-right" />
+        </AuthProvider>
+      </QueryClientProvider>
+    </PreviewErrorBoundary>
   );
 }
