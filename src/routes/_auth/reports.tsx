@@ -1,19 +1,268 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app/PageHeader";
-import { EmptyState } from "@/components/app/EmptyState";
-import { Hammer } from "lucide-react";
+import { Loading } from "@/components/app/Loading";
+import { StatCard } from "@/components/app/StatCard";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { BarChart3, IndianRupee, Receipt, AlertCircle, Download } from "lucide-react";
+import { inr, fmtDate, modeLabel, exportCSV } from "@/lib/format";
 
 export const Route = createFileRoute("/_auth/reports")({ component: Page });
 
 function Page() {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toISOString().slice(0, 10); })();
+  const [from, setFrom] = useState(monthAgo);
+  const [to, setTo] = useState(today);
+
   return (
     <div>
-      <PageHeader title="Reports" description="Collection, dues, defaulter, discount, cheque, refund, and audit reports." />
-      <EmptyState
-        icon={Hammer}
-        title="Module coming online"
-        description="This module is part of the ENA Fees Management scope and will be completed in the next iteration. The database schema, business rules, and access policies are already provisioned."
-      />
+      <PageHeader title="Reports" description="Collections, outstanding balances, and defaulter summaries." />
+
+      <Card className="mb-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-3">
+          <div>
+            <Label className="mb-1 block text-xs">From</Label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">To</Label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          <div className="flex items-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setFrom(monthAgo); setTo(today); }}>Last 30 days</Button>
+            <Button variant="outline" size="sm" onClick={() => { setFrom(today); setTo(today); }}>Today</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="collections">
+        <TabsList>
+          <TabsTrigger value="collections"><Receipt className="h-4 w-4" /> Collections</TabsTrigger>
+          <TabsTrigger value="outstanding"><AlertCircle className="h-4 w-4" /> Outstanding</TabsTrigger>
+          <TabsTrigger value="batches"><BarChart3 className="h-4 w-4" /> By Course</TabsTrigger>
+        </TabsList>
+        <TabsContent value="collections" className="mt-4"><CollectionsReport from={from} to={to} /></TabsContent>
+        <TabsContent value="outstanding" className="mt-4"><OutstandingReport /></TabsContent>
+        <TabsContent value="batches" className="mt-4"><CourseReport /></TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+function CollectionsReport({ from, to }: { from: string; to: string }) {
+  const q = useQuery({
+    queryKey: ["report", "collections", from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select("id, receipt_number, payment_date, amount, payment_mode, status, collected_by_name, students(full_name, admission_number)")
+        .gte("payment_date", from).lte("payment_date", to)
+        .neq("status", "cancelled")
+        .order("payment_date", { ascending: false }).limit(1000);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const totals = useMemo(() => {
+    const list = (q.data || []) as any[];
+    const total = list.reduce((s, p) => s + Number(p.amount), 0);
+    const byMode: Record<string, number> = {};
+    for (const p of list) byMode[p.payment_mode] = (byMode[p.payment_mode] || 0) + Number(p.amount);
+    return { total, byMode, count: list.length };
+  }, [q.data]);
+
+  if (q.isLoading) return <Loading />;
+  return (
+    <div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+        <StatCard label="Total Collected" value={inr(totals.total)} icon={IndianRupee} tone="success" />
+        <StatCard label="Receipts" value={totals.count} icon={Receipt} tone="info" />
+        <StatCard label="By Mode" value={Object.keys(totals.byMode).length}
+          hint={Object.entries(totals.byMode).map(([m, v]) => `${modeLabel(m)} ${inr(v)}`).join(" · ") || "—"}
+          icon={BarChart3} tone="default" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Receipts</CardTitle>
+          <Button variant="outline" size="sm" disabled={!q.data?.length}
+            onClick={() => exportCSV(`collections_${from}_${to}.csv`, (q.data as any[]).map((p) => ({
+              receipt: p.receipt_number, date: p.payment_date,
+              student: p.students?.full_name, admission_number: p.students?.admission_number,
+              mode: p.payment_mode, amount: p.amount, status: p.status, collected_by: p.collected_by_name,
+            })))}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Receipt</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(q.data as any[]).map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-mono text-xs">{p.receipt_number}</TableCell>
+                    <TableCell className="text-sm">{fmtDate(p.payment_date)}</TableCell>
+                    <TableCell>{p.students?.full_name}<div className="text-xs text-muted-foreground">{p.students?.admission_number}</div></TableCell>
+                    <TableCell>{modeLabel(p.payment_mode)}</TableCell>
+                    <TableCell><StatusBadge status={p.status} /></TableCell>
+                    <TableCell className="text-sm">{p.collected_by_name}</TableCell>
+                    <TableCell className="text-right font-semibold">{inr(p.amount)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OutstandingReport() {
+  const q = useQuery({
+    queryKey: ["report", "outstanding"],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data, error } = await supabase
+        .from("installments")
+        .select("amount, amount_paid, status, due_date, students(id, full_name, admission_number, courses(name))")
+        .neq("status", "paid").limit(2000);
+      if (error) throw error;
+      // group by student
+      const map = new Map<string, { name: string; adm: string; course: string; outstanding: number; overdue: number }>();
+      for (const i of (data || []) as any[]) {
+        const s = i.students; if (!s) continue;
+        const remain = Number(i.amount) - Number(i.amount_paid);
+        const cur = map.get(s.id) || { name: s.full_name, adm: s.admission_number, course: s.courses?.name || "—", outstanding: 0, overdue: 0 };
+        cur.outstanding += remain;
+        if (i.due_date < today) cur.overdue += remain;
+        map.set(s.id, cur);
+      }
+      return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding);
+    },
+  });
+  if (q.isLoading) return <Loading />;
+  const total = (q.data || []).reduce((s, r) => s + r.outstanding, 0);
+  return (
+    <div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2">
+        <StatCard label="Students with Dues" value={(q.data || []).length} icon={AlertCircle} tone="warning" />
+        <StatCard label="Total Outstanding" value={inr(total)} icon={IndianRupee} tone="destructive" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>By Student</CardTitle>
+          <Button variant="outline" size="sm" disabled={!q.data?.length}
+            onClick={() => exportCSV(`outstanding_${Date.now()}.csv`, (q.data || []) as any)}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Admission #</TableHead>
+                <TableHead>Student</TableHead>
+                <TableHead>Course</TableHead>
+                <TableHead className="text-right">Overdue</TableHead>
+                <TableHead className="text-right">Outstanding</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(q.data || []).map((r, idx) => (
+                <TableRow key={idx}>
+                  <TableCell className="font-mono text-xs">{r.adm}</TableCell>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell>{r.course}</TableCell>
+                  <TableCell className="text-right text-destructive">{inr(r.overdue)}</TableCell>
+                  <TableCell className="text-right font-semibold">{inr(r.outstanding)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CourseReport() {
+  const q = useQuery({
+    queryKey: ["report", "by-course"],
+    queryFn: async () => {
+      const { data: courses } = await supabase.from("courses").select("id, name");
+      const result = await Promise.all(
+        (courses || []).map(async (c) => {
+          const { data: ins } = await supabase
+            .from("installments")
+            .select("amount, amount_paid, students!inner(course_id)")
+            .eq("students.course_id", c.id);
+          const total = (ins || []).reduce((s, i: any) => s + Number(i.amount), 0);
+          const paid = (ins || []).reduce((s, i: any) => s + Number(i.amount_paid), 0);
+          return { name: c.name, total, paid, outstanding: total - paid };
+        })
+      );
+      return result;
+    },
+  });
+  if (q.isLoading) return <Loading />;
+  return (
+    <Card>
+      <CardHeader><CardTitle>By Course</CardTitle></CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Course</TableHead>
+              <TableHead className="text-right">Total Billed</TableHead>
+              <TableHead className="text-right">Collected</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
+              <TableHead>Progress</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(q.data || []).map((r, idx) => {
+              const pct = r.total ? Math.round((r.paid / r.total) * 100) : 0;
+              return (
+                <TableRow key={idx}>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="text-right">{inr(r.total)}</TableCell>
+                  <TableCell className="text-right text-success">{inr(r.paid)}</TableCell>
+                  <TableCell className="text-right text-destructive">{inr(r.outstanding)}</TableCell>
+                  <TableCell>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-[var(--gradient-primary)]" style={{ width: pct + "%" }} />
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">{pct}%</div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
