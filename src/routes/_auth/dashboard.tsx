@@ -18,6 +18,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { ClickthroughChecklist } from "@/components/app/ClickthroughChecklist";
 
 export const Route = createFileRoute("/_auth/dashboard")({ component: Dashboard });
 
@@ -115,6 +116,10 @@ function Dashboard() {
         <StatCard label="Pending Dues" value={inr(dues.data?.outstanding || 0)} icon={AlertCircle} tone="destructive" hint={`${dues.data?.overdueCount ?? 0} overdue installments`} />
         <StatCard label="Due Today" value={dues.data?.dueToday ?? 0} icon={CalendarClock} tone="warning" hint="Installments awaiting payment" />
         <StatCard label="New Enrollments" value={newEnrollments.data?.month ?? 0} icon={Users} tone="info" hint={`${newEnrollments.data?.week ?? 0} this week`} />
+      </div>
+
+      <div className="mt-6">
+        <ClickthroughChecklist />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
