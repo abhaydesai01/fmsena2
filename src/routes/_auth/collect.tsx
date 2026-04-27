@@ -21,7 +21,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, Receipt, IndianRupee, CheckCircle2 } from "lucide-react";
+import { Search, Receipt, IndianRupee, CheckCircle2, Filter, X } from "lucide-react";
 import { inr, fmtDate, modeLabel } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
@@ -37,6 +37,14 @@ type Student = {
   courses?: { name: string } | null; batches?: { name: string } | null;
 };
 
+type BrowseRow = Student & {
+  course_id: string;
+  total: number;
+  paid: number;
+  due: number;
+  pay_status: "paid" | "partial" | "due" | "overdue";
+};
+
 function Page() {
   const { fullName, role, user } = useAuth();
   const qc = useQueryClient();
@@ -44,6 +52,67 @@ function Page() {
   const [selected, setSelected] = useState<Student | null>(null);
   const [payInst, setPayInst] = useState<Inst | null>(null);
   const [lastReceipt, setLastReceipt] = useState<{ no: string; student: string; amount: number } | null>(null);
+  const [courseFilter, setCourseFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
+
+  const courses = useQuery({
+    queryKey: ["collect", "courses"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("courses")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name");
+      return data || [];
+    },
+  });
+
+  const browse = useQuery({
+    queryKey: ["collect", "browse", courseFilter, statusFilter],
+    enabled: !selected && q.trim().length < 2,
+    queryFn: async () => {
+      let sQ = supabase
+        .from("students")
+        .select("id, admission_number, full_name, mobile, course_id, courses(name), batches(name)")
+        .eq("status", "active")
+        .order("full_name")
+        .limit(500);
+      if (courseFilter !== "all") sQ = sQ.eq("course_id", courseFilter);
+      const { data: students } = await sQ;
+      const list = (students || []) as (Student & { course_id: string })[];
+      if (list.length === 0) return [] as BrowseRow[];
+
+      const ids = list.map((s) => s.id);
+      const { data: ins } = await supabase
+        .from("installments")
+        .select("student_id, amount, amount_paid, status, due_date")
+        .in("student_id", ids);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const agg = new Map<string, { total: number; paid: number; hasOverdue: boolean }>();
+      for (const i of ins || []) {
+        const a = agg.get(i.student_id) || { total: 0, paid: 0, hasOverdue: false };
+        a.total += Number(i.amount);
+        a.paid += Number(i.amount_paid);
+        const remaining = Number(i.amount) - Number(i.amount_paid);
+        if (remaining > 0 && i.due_date < today) a.hasOverdue = true;
+        agg.set(i.student_id, a);
+      }
+
+      const rows: BrowseRow[] = list.map((s) => {
+        const a = agg.get(s.id) || { total: 0, paid: 0, hasOverdue: false };
+        const due = a.total - a.paid;
+        let pay_status: BrowseRow["pay_status"] = "due";
+        if (a.total === 0) pay_status = "due";
+        else if (due <= 0) pay_status = "paid";
+        else if (a.hasOverdue) pay_status = "overdue";
+        else if (a.paid > 0) pay_status = "partial";
+        return { ...s, total: a.total, paid: a.paid, due, pay_status };
+      });
+
+      return statusFilter === "all" ? rows : rows.filter((r) => r.pay_status === statusFilter);
+    },
+  });
 
   const search = useQuery({
     queryKey: ["collect", "search", q],
@@ -151,8 +220,98 @@ function Page() {
           {q.trim().length >= 2 && search.data && search.data.length === 0 && (
             <p className="mt-3 text-sm text-muted-foreground">No active students match.</p>
           )}
+
+          {!selected && q.trim().length < 2 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Filter className="h-3.5 w-3.5" /> Filters
+              </div>
+              <Select value={courseFilter} onValueChange={setCourseFilter}>
+                <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Course" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All courses</SelectItem>
+                  {courses.data?.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Fee status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="paid">Fully paid</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                  <SelectItem value="due">Due</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+              {(courseFilter !== "all" || statusFilter !== "all") && (
+                <Button variant="ghost" size="sm" onClick={() => { setCourseFilter("all"); setStatusFilter("all"); }}>
+                  <X className="h-3.5 w-3.5" /> Clear
+                </Button>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground">
+                {browse.isLoading ? "Loading…" : `${browse.data?.length ?? 0} students`}
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {!selected && q.trim().length < 2 && (
+        <Card className="mb-4">
+          <CardContent className="p-0">
+            {browse.isLoading ? (
+              <Loading />
+            ) : (browse.data?.length ?? 0) === 0 ? (
+              <EmptyState
+                icon={Receipt}
+                title="No students match these filters"
+                description="Adjust the course or fee status filter, or search by name above."
+              />
+            ) : (
+              <div className="max-h-[480px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-card">
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>Course / Batch</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Outstanding</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {browse.data?.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell>
+                          <div className="font-medium">{s.full_name}</div>
+                          <div className="text-xs text-muted-foreground">{s.admission_number} · {s.mobile}</div>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {s.courses?.name || "—"}<br />
+                          <span className="text-xs">{s.batches?.name || ""}</span>
+                        </TableCell>
+                        <TableCell className="text-right">{inr(s.total)}</TableCell>
+                        <TableCell className={`text-right font-medium ${s.due > 0 ? "text-destructive" : ""}`}>
+                          {inr(s.due)}
+                        </TableCell>
+                        <TableCell><StatusBadge status={s.pay_status} /></TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant={s.due > 0 ? "default" : "outline"} onClick={() => setSelected(s)}>
+                            {s.due > 0 ? "Collect" : "View"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {selected && (
         <Card>
@@ -209,10 +368,6 @@ function Page() {
             )}
           </CardContent>
         </Card>
-      )}
-
-      {!selected && q.trim().length < 2 && (
-        <EmptyState icon={Receipt} title="Search a student to begin" description="Find by name, admission number, or mobile." />
       )}
 
       <PaymentDialog
