@@ -138,8 +138,16 @@ function Page() {
                 <TableBody>
                   {filtered.map((s: any) => (
                     <TableRow key={s.id}>
-                      <TableCell className="font-mono text-xs">{s.admission_number}</TableCell>
-                      <TableCell className="font-medium">{s.full_name}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <Link to="/students/$studentId" params={{ studentId: s.id }} className="underline-offset-2 hover:underline">
+                          {s.admission_number}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <Link to="/students/$studentId" params={{ studentId: s.id }} className="hover:underline">
+                          {s.full_name}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         <div>{s.courses?.name}</div>
                         <div className="text-xs text-muted-foreground">{s.batches?.name}</div>

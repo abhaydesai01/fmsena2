@@ -21,6 +21,7 @@ import { Route as AuthDashboardRouteImport } from './routes/_auth/dashboard'
 import { Route as AuthCoursesRouteImport } from './routes/_auth/courses'
 import { Route as AuthCollectRouteImport } from './routes/_auth/collect'
 import { Route as AuthAuditRouteImport } from './routes/_auth/audit'
+import { Route as AuthStudentsStudentIdRouteImport } from './routes/_auth/students.$studentId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -81,6 +82,11 @@ const AuthAuditRoute = AuthAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthStudentsStudentIdRoute = AuthStudentsStudentIdRouteImport.update({
+  id: '/$studentId',
+  path: '/$studentId',
+  getParentRoute: () => AuthStudentsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -93,7 +99,8 @@ export interface FileRoutesByFullPath {
   '/enroll': typeof AuthEnrollRoute
   '/reports': typeof AuthReportsRoute
   '/settings': typeof AuthSettingsRoute
-  '/students': typeof AuthStudentsRoute
+  '/students': typeof AuthStudentsRouteWithChildren
+  '/students/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -106,7 +113,8 @@ export interface FileRoutesByTo {
   '/enroll': typeof AuthEnrollRoute
   '/reports': typeof AuthReportsRoute
   '/settings': typeof AuthSettingsRoute
-  '/students': typeof AuthStudentsRoute
+  '/students': typeof AuthStudentsRouteWithChildren
+  '/students/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -121,7 +129,8 @@ export interface FileRoutesById {
   '/_auth/enroll': typeof AuthEnrollRoute
   '/_auth/reports': typeof AuthReportsRoute
   '/_auth/settings': typeof AuthSettingsRoute
-  '/_auth/students': typeof AuthStudentsRoute
+  '/_auth/students': typeof AuthStudentsRouteWithChildren
+  '/_auth/students/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/students'
+    | '/students/$studentId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/students'
+    | '/students/$studentId'
   id:
     | '__root__'
     | '/'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/_auth/reports'
     | '/_auth/settings'
     | '/_auth/students'
+    | '/_auth/students/$studentId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -258,8 +270,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthAuditRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/students/$studentId': {
+      id: '/_auth/students/$studentId'
+      path: '/$studentId'
+      fullPath: '/students/$studentId'
+      preLoaderRoute: typeof AuthStudentsStudentIdRouteImport
+      parentRoute: typeof AuthStudentsRoute
+    }
   }
 }
+
+interface AuthStudentsRouteChildren {
+  AuthStudentsStudentIdRoute: typeof AuthStudentsStudentIdRoute
+}
+
+const AuthStudentsRouteChildren: AuthStudentsRouteChildren = {
+  AuthStudentsStudentIdRoute: AuthStudentsStudentIdRoute,
+}
+
+const AuthStudentsRouteWithChildren = AuthStudentsRoute._addFileChildren(
+  AuthStudentsRouteChildren,
+)
 
 interface AuthRouteChildren {
   AuthAuditRoute: typeof AuthAuditRoute
@@ -270,7 +301,7 @@ interface AuthRouteChildren {
   AuthEnrollRoute: typeof AuthEnrollRoute
   AuthReportsRoute: typeof AuthReportsRoute
   AuthSettingsRoute: typeof AuthSettingsRoute
-  AuthStudentsRoute: typeof AuthStudentsRoute
+  AuthStudentsRoute: typeof AuthStudentsRouteWithChildren
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
@@ -282,7 +313,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthEnrollRoute: AuthEnrollRoute,
   AuthReportsRoute: AuthReportsRoute,
   AuthSettingsRoute: AuthSettingsRoute,
-  AuthStudentsRoute: AuthStudentsRoute,
+  AuthStudentsRoute: AuthStudentsRouteWithChildren,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
