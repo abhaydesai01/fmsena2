@@ -247,7 +247,10 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
 
   return (
     <div>
-      <PageHeader title="Enrol Student" description="Profile → Fee plan → Review & confirm." />
+      <PageHeader
+        title="Enrol Student"
+        description={`Profile → Fee plan → Review. Campus: ${campus?.name || "—"}`}
+      />
 
       <Stepper step={step} />
 
@@ -344,6 +347,71 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
                 <p className="text-xs text-muted-foreground">Adds monthly transport fee.</p>
               </div>
               <Switch checked={profile.transport_required} onCheckedChange={(v) => setProfile({ ...profile, transport_required: v })} />
+            </div>
+
+            {/* Additional offline-form fields */}
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Personal details (optional)
+            </div>
+            <Field label="Blood Group">
+              <Input value={profile.blood_group} onChange={(e) => setProfile({ ...profile, blood_group: e.target.value })} placeholder="e.g. B+" />
+            </Field>
+            <Field label="Category">
+              <Input value={profile.category} onChange={(e) => setProfile({ ...profile, category: e.target.value })} placeholder="General / OBC / SC / ST" />
+            </Field>
+            <Field label="Religion">
+              <Input value={profile.religion} onChange={(e) => setProfile({ ...profile, religion: e.target.value })} />
+            </Field>
+            <Field label="Sub-caste">
+              <Input value={profile.sub_caste} onChange={(e) => setProfile({ ...profile, sub_caste: e.target.value })} />
+            </Field>
+            <Field label="Mother Tongue">
+              <Input value={profile.mother_tongue} onChange={(e) => setProfile({ ...profile, mother_tongue: e.target.value })} />
+            </Field>
+            <Field label="Languages Known">
+              <Input value={profile.languages_known} onChange={(e) => setProfile({ ...profile, languages_known: e.target.value })} placeholder="e.g. English, Hindi, Kannada" />
+            </Field>
+            <Field label="Place of Birth">
+              <Input value={profile.place_of_birth} onChange={(e) => setProfile({ ...profile, place_of_birth: e.target.value })} />
+            </Field>
+            <Field label="Sibling Info">
+              <Input value={profile.sibling_info} onChange={(e) => setProfile({ ...profile, sibling_info: e.target.value })} placeholder="e.g. 1 brother, 1 sister" />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Emergency contact (optional)
+            </div>
+            <Field label="Contact Name">
+              <Input value={profile.emergency_name} onChange={(e) => setProfile({ ...profile, emergency_name: e.target.value })} />
+            </Field>
+            <Field label="Relation">
+              <Input value={profile.emergency_relation} onChange={(e) => setProfile({ ...profile, emergency_relation: e.target.value })} />
+            </Field>
+            <Field label="Contact Mobile">
+              <Input value={profile.emergency_mobile} onChange={(e) => setProfile({ ...profile, emergency_mobile: e.target.value })} />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Academic background (optional)
+            </div>
+            <Field label="Previous School">
+              <Input value={profile.previous_school} onChange={(e) => setProfile({ ...profile, previous_school: e.target.value })} />
+            </Field>
+            <Field label="Board">
+              <Input value={profile.board} onChange={(e) => setProfile({ ...profile, board: e.target.value })} placeholder="CBSE / ICSE / State" />
+            </Field>
+            <Field label="10th Marks / %">
+              <Input value={profile.marks_10th} onChange={(e) => setProfile({ ...profile, marks_10th: e.target.value })} />
+            </Field>
+            <Field label="12th Marks / %">
+              <Input value={profile.marks_12th} onChange={(e) => setProfile({ ...profile, marks_12th: e.target.value })} />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Documents (optional — can also be uploaded later)
+            </div>
+            <div className="md:col-span-2">
+              <DocumentsUploader docs={docs} setDocs={setDocs} />
             </div>
 
             <div className="flex justify-end md:col-span-2">
