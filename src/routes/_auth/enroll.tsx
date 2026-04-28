@@ -587,3 +587,73 @@ function Row({ k, v }: { k: string; v: string }) {
     </div>
   );
 }
+
+const DEFAULT_DOC_LABELS = [
+  "Photo",
+  "Aadhaar",
+  "10th Marksheet",
+  "12th Marksheet",
+  "TC (Transfer Certificate)",
+  "Caste Certificate",
+  "Income Certificate",
+  "Migration Certificate",
+];
+
+function DocumentsUploader({
+  docs,
+  setDocs,
+}: {
+  docs: { label: string; file: File }[];
+  setDocs: (d: { label: string; file: File }[]) => void;
+}) {
+  const [label, setLabel] = useState(DEFAULT_DOC_LABELS[0]);
+  const [customLabel, setCustomLabel] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  const add = () => {
+    if (!file) return;
+    const finalLabel = label === "__other__" ? customLabel.trim() : label;
+    if (!finalLabel) return;
+    setDocs([...docs, { label: finalLabel, file }]);
+    setFile(null);
+    setCustomLabel("");
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border border-border p-3">
+      <div className="grid gap-2 md:grid-cols-[200px_1fr_auto]">
+        <select
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+        >
+          {DEFAULT_DOC_LABELS.map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+          <option value="__other__">Other…</option>
+        </select>
+        {label === "__other__" ? (
+          <Input value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder="Document name" />
+        ) : (
+          <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        )}
+        {label === "__other__" && (
+          <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="md:col-span-2" />
+        )}
+        <Button type="button" size="sm" onClick={add} disabled={!file}>Add</Button>
+      </div>
+      {docs.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {docs.map((d, i) => (
+            <li key={i} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1">
+              <span><span className="font-medium">{d.label}</span> · <span className="text-xs text-muted-foreground">{d.file.name} ({Math.round(d.file.size / 1024)} KB)</span></span>
+              <button type="button" className="text-xs text-destructive underline" onClick={() => setDocs(docs.filter((_, ix) => ix !== i))}>remove</button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No documents queued. Files are uploaded after the student is created.</p>
+      )}
+    </div>
+  );
+}
