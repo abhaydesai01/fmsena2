@@ -63,6 +63,7 @@ import {
 import { inr, fmtDate } from "@/lib/format";
 import { logAudit } from "@/lib/audit";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 import type { Database } from "@/integrations/supabase/types";
 
 type Course = Database["public"]["Tables"]["courses"]["Row"];
@@ -143,20 +144,21 @@ const emptyCourse: CourseFormState = {
 function CoursesPanel() {
   const qc = useQueryClient();
   const { fullName, role } = useAuth();
+  const { campusId, campus } = useCampus();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Course | null>(null);
   const [form, setForm] = useState<CourseFormState>(emptyCourse);
 
   const courses = useQuery({
-    queryKey: ["courses-list"],
+    queryKey: ["courses-list", campusId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("*")
-        .order("created_at", { ascending: false });
+      let q = supabase.from("courses").select("*").order("created_at", { ascending: false });
+      if (campusId) q = q.eq("campus_id", campusId);
+      const { data, error } = await q;
       if (error) throw error;
       return data as Course[];
     },
+    enabled: !!campusId,
   });
 
   const studentCounts = useQuery({
@@ -194,6 +196,7 @@ function CoursesPanel() {
   const save = useMutation({
     mutationFn: async () => {
       if (!form.name.trim()) throw new Error("Course name is required");
+      if (!campusId) throw new Error("Select a campus first");
       const gross = Number(form.gross_fee);
       if (!gross || gross <= 0) throw new Error("Gross fee must be greater than 0");
       const payload = {
@@ -205,6 +208,7 @@ function CoursesPanel() {
         material_fee: Number(form.material_fee) || 0,
         test_series_fee: Number(form.test_series_fee) || 0,
         is_active: form.is_active,
+        campus_id: campusId,
       };
       if (editing) {
         const { error } = await supabase.from("courses").update(payload).eq("id", editing.id);
@@ -276,7 +280,7 @@ function CoursesPanel() {
         <div>
           <CardTitle>Courses</CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            {list.length} course{list.length === 1 ? "" : "s"} configured
+            {list.length} course{list.length === 1 ? "" : "s"} in {campus?.name || "—"}
           </p>
         </div>
         <Button onClick={startCreate}>
