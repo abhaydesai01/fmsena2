@@ -22,6 +22,7 @@ import { inr, discountLabel } from "@/lib/format";
 import { calculateNetPayable, splitInstallments, defaultDueDates, type DiscountType } from "@/lib/installments";
 import { logAudit } from "@/lib/audit";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 import type { Database } from "@/integrations/supabase/types";
 
 type Course = Database["public"]["Tables"]["courses"]["Row"];
@@ -47,6 +48,7 @@ type Step = 1 | 2 | 3;
 function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "admin" | "cashier" | null }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { campusId, campus } = useCampus();
   const [step, setStep] = useState<Step>(1);
 
   // Step 1 — Student profile
@@ -59,7 +61,16 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
     course_id: "", batch_id: "",
     hostel_required: false, transport_required: false,
     medium: "English",
+    // Extended offline-form fields
+    blood_group: "", category: "", religion: "", sub_caste: "",
+    mother_tongue: "", languages_known: "", place_of_birth: "",
+    sibling_info: "",
+    emergency_name: "", emergency_relation: "", emergency_mobile: "",
+    previous_school: "", board: "", marks_10th: "", marks_12th: "",
   });
+
+  // Step 1.5 — Document uploads (queued, uploaded after student is created)
+  const [docs, setDocs] = useState<{ label: string; file: File }[]>([]);
 
   // Step 2 — Fee assignment
   const [fee, setFee] = useState({
@@ -72,18 +83,23 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
   });
 
   const courses = useQuery({
-    queryKey: ["enroll", "courses"],
+    queryKey: ["enroll", "courses", campusId],
+    enabled: !!campusId,
     queryFn: async () => {
-      const { data } = await supabase.from("courses").select("*").eq("is_active", true).order("name");
+      let q = supabase.from("courses").select("*").eq("is_active", true).order("name");
+      if (campusId) q = q.eq("campus_id", campusId);
+      const { data } = await q;
       return (data || []) as Course[];
     },
   });
   const batches = useQuery({
-    queryKey: ["enroll", "batches", profile.course_id],
-    enabled: !!profile.course_id,
+    queryKey: ["enroll", "batches", profile.course_id, campusId],
+    enabled: !!profile.course_id && !!campusId,
     queryFn: async () => {
-      const { data } = await supabase.from("batches").select("*")
+      let q = supabase.from("batches").select("*")
         .eq("course_id", profile.course_id).neq("status", "closed").order("name");
+      if (campusId) q = q.eq("campus_id", campusId);
+      const { data } = await q;
       return (data || []) as Batch[];
     },
   });
@@ -110,6 +126,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
 
   const create = useMutation({
     mutationFn: async () => {
+      if (!campusId) throw new Error("Select a campus first");
       // 1) admission number
       const { data: admNo, error: admErr } = await supabase.rpc("next_admission_number", { _year: "2025-26" });
       if (admErr) throw admErr;
@@ -131,9 +148,25 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
         mother_mobile: profile.mother_mobile || null,
         course_id: profile.course_id,
         batch_id: profile.batch_id,
+        campus_id: campusId,
         hostel_required: profile.hostel_required,
         transport_required: profile.transport_required,
         medium: profile.medium,
+        blood_group: profile.blood_group || null,
+        category: profile.category || null,
+        religion: profile.religion || null,
+        sub_caste: profile.sub_caste || null,
+        mother_tongue: profile.mother_tongue || null,
+        languages_known: profile.languages_known || null,
+        place_of_birth: profile.place_of_birth || null,
+        sibling_info: profile.sibling_info || null,
+        emergency_name: profile.emergency_name || null,
+        emergency_relation: profile.emergency_relation || null,
+        emergency_mobile: profile.emergency_mobile || null,
+        previous_school: profile.previous_school || null,
+        board: profile.board || null,
+        marks_10th: profile.marks_10th || null,
+        marks_12th: profile.marks_12th || null,
       }).select("*").single();
       if (stErr) throw stErr;
 
@@ -166,10 +199,36 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
       const { error: insErr } = await supabase.from("installments").insert(rows);
       if (insErr) throw insErr;
 
+      // 5) upload queued documents (optional)
+      if (docs.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        for (const d of docs) {
+          const ext = d.file.name.split(".").pop() || "bin";
+          const path = `${student.id}/${Date.now()}_${d.label.replace(/\W+/g, "_")}.${ext}`;
+          const up = await supabase.storage.from("student-files").upload(path, d.file, {
+            contentType: d.file.type || undefined, upsert: false,
+          });
+          if (up.error) {
+            console.warn("Upload failed for", d.label, up.error.message);
+            continue;
+          }
+          const { data: pub } = supabase.storage.from("student-files").getPublicUrl(path);
+          await supabase.from("student_documents").insert({
+            student_id: student.id,
+            label: d.label,
+            file_url: pub.publicUrl,
+            mime_type: d.file.type || null,
+            size_bytes: d.file.size,
+            uploaded_by: user?.id ?? null,
+            uploaded_by_name: actorName,
+          });
+        }
+      }
+
       await logAudit({
         actorName, actorRole,
         action: "enroll_student", entityType: "student", entityId: student.id,
-        newValue: { admission_number: admNo, net_payable: calc.netPayable, installments: rows.length },
+        newValue: { admission_number: admNo, net_payable: calc.netPayable, installments: rows.length, campus_id: campusId, docs: docs.length },
       });
       return student;
     },
@@ -188,7 +247,10 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
 
   return (
     <div>
-      <PageHeader title="Enrol Student" description="Profile → Fee plan → Review & confirm." />
+      <PageHeader
+        title="Enrol Student"
+        description={`Profile → Fee plan → Review. Campus: ${campus?.name || "—"}`}
+      />
 
       <Stepper step={step} />
 
@@ -285,6 +347,71 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
                 <p className="text-xs text-muted-foreground">Adds monthly transport fee.</p>
               </div>
               <Switch checked={profile.transport_required} onCheckedChange={(v) => setProfile({ ...profile, transport_required: v })} />
+            </div>
+
+            {/* Additional offline-form fields */}
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Personal details (optional)
+            </div>
+            <Field label="Blood Group">
+              <Input value={profile.blood_group} onChange={(e) => setProfile({ ...profile, blood_group: e.target.value })} placeholder="e.g. B+" />
+            </Field>
+            <Field label="Category">
+              <Input value={profile.category} onChange={(e) => setProfile({ ...profile, category: e.target.value })} placeholder="General / OBC / SC / ST" />
+            </Field>
+            <Field label="Religion">
+              <Input value={profile.religion} onChange={(e) => setProfile({ ...profile, religion: e.target.value })} />
+            </Field>
+            <Field label="Sub-caste">
+              <Input value={profile.sub_caste} onChange={(e) => setProfile({ ...profile, sub_caste: e.target.value })} />
+            </Field>
+            <Field label="Mother Tongue">
+              <Input value={profile.mother_tongue} onChange={(e) => setProfile({ ...profile, mother_tongue: e.target.value })} />
+            </Field>
+            <Field label="Languages Known">
+              <Input value={profile.languages_known} onChange={(e) => setProfile({ ...profile, languages_known: e.target.value })} placeholder="e.g. English, Hindi, Kannada" />
+            </Field>
+            <Field label="Place of Birth">
+              <Input value={profile.place_of_birth} onChange={(e) => setProfile({ ...profile, place_of_birth: e.target.value })} />
+            </Field>
+            <Field label="Sibling Info">
+              <Input value={profile.sibling_info} onChange={(e) => setProfile({ ...profile, sibling_info: e.target.value })} placeholder="e.g. 1 brother, 1 sister" />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Emergency contact (optional)
+            </div>
+            <Field label="Contact Name">
+              <Input value={profile.emergency_name} onChange={(e) => setProfile({ ...profile, emergency_name: e.target.value })} />
+            </Field>
+            <Field label="Relation">
+              <Input value={profile.emergency_relation} onChange={(e) => setProfile({ ...profile, emergency_relation: e.target.value })} />
+            </Field>
+            <Field label="Contact Mobile">
+              <Input value={profile.emergency_mobile} onChange={(e) => setProfile({ ...profile, emergency_mobile: e.target.value })} />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Academic background (optional)
+            </div>
+            <Field label="Previous School">
+              <Input value={profile.previous_school} onChange={(e) => setProfile({ ...profile, previous_school: e.target.value })} />
+            </Field>
+            <Field label="Board">
+              <Input value={profile.board} onChange={(e) => setProfile({ ...profile, board: e.target.value })} placeholder="CBSE / ICSE / State" />
+            </Field>
+            <Field label="10th Marks / %">
+              <Input value={profile.marks_10th} onChange={(e) => setProfile({ ...profile, marks_10th: e.target.value })} />
+            </Field>
+            <Field label="12th Marks / %">
+              <Input value={profile.marks_12th} onChange={(e) => setProfile({ ...profile, marks_12th: e.target.value })} />
+            </Field>
+
+            <div className="md:col-span-2 mt-2 border-t border-border pt-3 text-sm font-semibold">
+              Documents (optional — can also be uploaded later)
+            </div>
+            <div className="md:col-span-2">
+              <DocumentsUploader docs={docs} setDocs={setDocs} />
             </div>
 
             <div className="flex justify-end md:col-span-2">
@@ -457,6 +584,76 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex justify-between gap-4">
       <dt className="text-muted-foreground">{k}</dt>
       <dd className="text-right font-medium">{v}</dd>
+    </div>
+  );
+}
+
+const DEFAULT_DOC_LABELS = [
+  "Photo",
+  "Aadhaar",
+  "10th Marksheet",
+  "12th Marksheet",
+  "TC (Transfer Certificate)",
+  "Caste Certificate",
+  "Income Certificate",
+  "Migration Certificate",
+];
+
+function DocumentsUploader({
+  docs,
+  setDocs,
+}: {
+  docs: { label: string; file: File }[];
+  setDocs: (d: { label: string; file: File }[]) => void;
+}) {
+  const [label, setLabel] = useState(DEFAULT_DOC_LABELS[0]);
+  const [customLabel, setCustomLabel] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  const add = () => {
+    if (!file) return;
+    const finalLabel = label === "__other__" ? customLabel.trim() : label;
+    if (!finalLabel) return;
+    setDocs([...docs, { label: finalLabel, file }]);
+    setFile(null);
+    setCustomLabel("");
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border border-border p-3">
+      <div className="grid gap-2 md:grid-cols-[200px_1fr_auto]">
+        <select
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+        >
+          {DEFAULT_DOC_LABELS.map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+          <option value="__other__">Other…</option>
+        </select>
+        {label === "__other__" ? (
+          <Input value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder="Document name" />
+        ) : (
+          <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        )}
+        {label === "__other__" && (
+          <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="md:col-span-2" />
+        )}
+        <Button type="button" size="sm" onClick={add} disabled={!file}>Add</Button>
+      </div>
+      {docs.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {docs.map((d, i) => (
+            <li key={i} className="flex items-center justify-between rounded bg-muted/40 px-2 py-1">
+              <span><span className="font-medium">{d.label}</span> · <span className="text-xs text-muted-foreground">{d.file.name} ({Math.round(d.file.size / 1024)} KB)</span></span>
+              <button type="button" className="text-xs text-destructive underline" onClick={() => setDocs(docs.filter((_, ix) => ix !== i))}>remove</button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No documents queued. Files are uploaded after the student is created.</p>
+      )}
     </div>
   );
 }

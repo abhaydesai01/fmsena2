@@ -59,6 +59,7 @@ export type Database = {
       batches: {
         Row: {
           academic_year: string
+          campus_id: string
           capacity: number
           course_id: string
           created_at: string
@@ -71,6 +72,7 @@ export type Database = {
         }
         Insert: {
           academic_year?: string
+          campus_id: string
           capacity?: number
           course_id: string
           created_at?: string
@@ -83,6 +85,7 @@ export type Database = {
         }
         Update: {
           academic_year?: string
+          campus_id?: string
           capacity?: number
           course_id?: string
           created_at?: string
@@ -103,9 +106,40 @@ export type Database = {
           },
         ]
       }
+      campuses: {
+        Row: {
+          address: string | null
+          city: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       courses: {
         Row: {
           academic_year: string
+          campus_id: string
           created_at: string
           duration_months: number
           gross_fee: number
@@ -119,6 +153,7 @@ export type Database = {
         }
         Insert: {
           academic_year?: string
+          campus_id: string
           created_at?: string
           duration_months?: number
           gross_fee: number
@@ -132,6 +167,7 @@ export type Database = {
         }
         Update: {
           academic_year?: string
+          campus_id?: string
           created_at?: string
           duration_months?: number
           gross_fee?: number
@@ -510,6 +546,90 @@ export type Database = {
         }
         Relationships: []
       }
+      student_documents: {
+        Row: {
+          created_at: string
+          file_url: string
+          id: string
+          label: string
+          mime_type: string | null
+          size_bytes: number | null
+          student_id: string
+          uploaded_by: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_url: string
+          id?: string
+          label: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          student_id: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_url?: string
+          id?: string
+          label?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          student_id?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: []
+      }
+      student_transfers: {
+        Row: {
+          created_at: string
+          from_batch_id: string | null
+          from_campus_id: string | null
+          from_class: string | null
+          id: string
+          kind: string
+          performed_by: string | null
+          performed_by_name: string | null
+          reason: string | null
+          student_id: string
+          to_batch_id: string | null
+          to_campus_id: string | null
+          to_class: string | null
+        }
+        Insert: {
+          created_at?: string
+          from_batch_id?: string | null
+          from_campus_id?: string | null
+          from_class?: string | null
+          id?: string
+          kind: string
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id: string
+          to_batch_id?: string | null
+          to_campus_id?: string | null
+          to_class?: string | null
+        }
+        Update: {
+          created_at?: string
+          from_batch_id?: string | null
+          from_campus_id?: string | null
+          from_class?: string | null
+          id?: string
+          kind?: string
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id?: string
+          to_batch_id?: string | null
+          to_campus_id?: string | null
+          to_class?: string | null
+        }
+        Relationships: []
+      }
       students: {
         Row: {
           aadhaar_doc_url: string | null
@@ -518,7 +638,10 @@ export type Database = {
           admission_date: string
           admission_number: string
           batch_id: string
+          blood_group: string | null
           board: string | null
+          campus_id: string
+          category: string | null
           class_year: Database["public"]["Enums"]["class_year"]
           course_id: string
           created_at: string
@@ -526,6 +649,9 @@ export type Database = {
           current_address: string | null
           date_of_birth: string
           email: string | null
+          emergency_mobile: string | null
+          emergency_name: string | null
+          emergency_relation: string | null
           father_mobile: string
           father_name: string
           father_occupation: string | null
@@ -535,6 +661,7 @@ export type Database = {
           guardian_name: string | null
           hostel_required: boolean
           id: string
+          languages_known: string | null
           marks_10th: string | null
           marks_12th: string | null
           marksheet_10_url: string | null
@@ -543,6 +670,7 @@ export type Database = {
           mobile: string
           mother_mobile: string | null
           mother_name: string | null
+          mother_tongue: string | null
           nationality: string | null
           neet_attempt: number | null
           parent_annual_income: number | null
@@ -550,10 +678,15 @@ export type Database = {
           passport_photo_copies: number | null
           permanent_address: string
           photo_url: string | null
+          place_of_birth: string | null
+          previous_class: string | null
           previous_neet_score: string | null
           previous_school: string | null
           referred_by: string | null
+          religion: string | null
+          sibling_info: string | null
           status: Database["public"]["Enums"]["student_status"]
+          sub_caste: string | null
           tc_url: string | null
           transport_required: boolean
           updated_at: string
@@ -565,7 +698,10 @@ export type Database = {
           admission_date?: string
           admission_number: string
           batch_id: string
+          blood_group?: string | null
           board?: string | null
+          campus_id: string
+          category?: string | null
           class_year: Database["public"]["Enums"]["class_year"]
           course_id: string
           created_at?: string
@@ -573,6 +709,9 @@ export type Database = {
           current_address?: string | null
           date_of_birth: string
           email?: string | null
+          emergency_mobile?: string | null
+          emergency_name?: string | null
+          emergency_relation?: string | null
           father_mobile: string
           father_name: string
           father_occupation?: string | null
@@ -582,6 +721,7 @@ export type Database = {
           guardian_name?: string | null
           hostel_required?: boolean
           id?: string
+          languages_known?: string | null
           marks_10th?: string | null
           marks_12th?: string | null
           marksheet_10_url?: string | null
@@ -590,6 +730,7 @@ export type Database = {
           mobile: string
           mother_mobile?: string | null
           mother_name?: string | null
+          mother_tongue?: string | null
           nationality?: string | null
           neet_attempt?: number | null
           parent_annual_income?: number | null
@@ -597,10 +738,15 @@ export type Database = {
           passport_photo_copies?: number | null
           permanent_address: string
           photo_url?: string | null
+          place_of_birth?: string | null
+          previous_class?: string | null
           previous_neet_score?: string | null
           previous_school?: string | null
           referred_by?: string | null
+          religion?: string | null
+          sibling_info?: string | null
           status?: Database["public"]["Enums"]["student_status"]
+          sub_caste?: string | null
           tc_url?: string | null
           transport_required?: boolean
           updated_at?: string
@@ -612,7 +758,10 @@ export type Database = {
           admission_date?: string
           admission_number?: string
           batch_id?: string
+          blood_group?: string | null
           board?: string | null
+          campus_id?: string
+          category?: string | null
           class_year?: Database["public"]["Enums"]["class_year"]
           course_id?: string
           created_at?: string
@@ -620,6 +769,9 @@ export type Database = {
           current_address?: string | null
           date_of_birth?: string
           email?: string | null
+          emergency_mobile?: string | null
+          emergency_name?: string | null
+          emergency_relation?: string | null
           father_mobile?: string
           father_name?: string
           father_occupation?: string | null
@@ -629,6 +781,7 @@ export type Database = {
           guardian_name?: string | null
           hostel_required?: boolean
           id?: string
+          languages_known?: string | null
           marks_10th?: string | null
           marks_12th?: string | null
           marksheet_10_url?: string | null
@@ -637,6 +790,7 @@ export type Database = {
           mobile?: string
           mother_mobile?: string | null
           mother_name?: string | null
+          mother_tongue?: string | null
           nationality?: string | null
           neet_attempt?: number | null
           parent_annual_income?: number | null
@@ -644,10 +798,15 @@ export type Database = {
           passport_photo_copies?: number | null
           permanent_address?: string
           photo_url?: string | null
+          place_of_birth?: string | null
+          previous_class?: string | null
           previous_neet_score?: string | null
           previous_school?: string | null
           referred_by?: string | null
+          religion?: string | null
+          sibling_info?: string | null
           status?: Database["public"]["Enums"]["student_status"]
+          sub_caste?: string | null
           tc_url?: string | null
           transport_required?: boolean
           updated_at?: string
