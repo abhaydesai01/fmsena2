@@ -490,6 +490,7 @@ const emptyBatch: BatchFormState = {
 function BatchesPanel() {
   const qc = useQueryClient();
   const { fullName, role } = useAuth();
+  const { campusId } = useCampus();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Batch | null>(null);
   const [form, setForm] = useState<BatchFormState>(emptyBatch);
@@ -497,27 +498,27 @@ function BatchesPanel() {
   const [filterCourse, setFilterCourse] = useState<string>("all");
 
   const courses = useQuery({
-    queryKey: ["courses-active"],
+    queryKey: ["courses-active", campusId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("id, name, is_active")
-        .order("name");
+      let q = supabase.from("courses").select("id, name, is_active").order("name");
+      if (campusId) q = q.eq("campus_id", campusId);
+      const { data, error } = await q;
       if (error) throw error;
       return data;
     },
+    enabled: !!campusId,
   });
 
   const batches = useQuery({
-    queryKey: ["batches-list"],
+    queryKey: ["batches-list", campusId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("batches")
-        .select("*, courses(name)")
-        .order("created_at", { ascending: false });
+      let q = supabase.from("batches").select("*, courses(name)").order("created_at", { ascending: false });
+      if (campusId) q = q.eq("campus_id", campusId);
+      const { data, error } = await q;
       if (error) throw error;
       return data as (Batch & { courses: { name: string } | null })[];
     },
+    enabled: !!campusId,
   });
 
   const enrolledCounts = useQuery({
@@ -557,6 +558,7 @@ function BatchesPanel() {
   const save = useMutation({
     mutationFn: async () => {
       if (!form.course_id) throw new Error("Select a course");
+      if (!campusId) throw new Error("Select a campus first");
       if (!form.name.trim()) throw new Error("Batch name is required");
       const cap = Number(form.capacity);
       if (!cap || cap <= 0) throw new Error("Capacity must be greater than 0");
@@ -572,6 +574,7 @@ function BatchesPanel() {
         academic_year: form.academic_year.trim() || "2025-26",
         start_date: form.start_date || null,
         status: form.status,
+        campus_id: campusId,
       };
       if (editing) {
         const { error } = await supabase.from("batches").update(payload).eq("id", editing.id);
