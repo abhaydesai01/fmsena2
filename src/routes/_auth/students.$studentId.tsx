@@ -20,10 +20,11 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ArrowLeftRight, ArrowUpRight, ChevronLeft, FileText, Upload, Trash2, History } from "lucide-react";
+import { ArrowLeftRight, ArrowUpRight, ChevronLeft, FileText, Upload, History, AlertTriangle, TrendingUp, Pencil, Save, X } from "lucide-react";
 import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { PLAN_LABEL, PLAN_NEXT, PLAN_MONTHS, evenSplit, type PlanKind } from "@/lib/installments";
 
 export const Route = createFileRoute("/_auth/students/$studentId")({ component: Page });
 
@@ -34,6 +35,10 @@ function Page() {
   const navigate = useNavigate();
   const [transferOpen, setTransferOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
+  const [upgradePlanOpen, setUpgradePlanOpen] = useState(false);
+  const [editInstId, setEditInstId] = useState<string | null>(null);
+  const [editAmt, setEditAmt] = useState<number>(0);
 
   const student = useQuery({
     queryKey: ["student", studentId],
@@ -56,6 +61,44 @@ function Page() {
         .select("*")
         .eq("student_id", studentId)
         .order("installment_no");
+      return data || [];
+    },
+  });
+
+  const feeAssignment = useQuery({
+    queryKey: ["student", studentId, "fee-assignment"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("fee_assignments")
+        .select("*")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const planUpgrades = useQuery({
+    queryKey: ["student", studentId, "plan-upgrades"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("plan_upgrades")
+        .select("*")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+  });
+
+  const concessionCancels = useQuery({
+    queryKey: ["student", studentId, "concession-cancels"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("concession_cancellations")
+        .select("*")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false });
       return data || [];
     },
   });
@@ -141,6 +184,15 @@ function Page() {
   const s = student.data;
   const totalDue = (installments.data || []).reduce((a, i) => a + Number(i.amount) - Number(i.amount_paid), 0);
   const totalPaid = (installments.data || []).reduce((a, i) => a + Number(i.amount_paid), 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const hasOverdue = (installments.data || []).some(
+    (i: any) => Number(i.amount) - Number(i.amount_paid) > 0 && i.due_date < today,
+  );
+  const fa = feeAssignment.data as any;
+  const currentPlan: PlanKind | null = fa?.plan_kind && PLAN_LABEL[fa.plan_kind as PlanKind] ? (fa.plan_kind as PlanKind) : null;
+  const hasConcession = fa && Number(fa.discount_amount || 0) > 0;
+  const showConcessionBanner = hasOverdue && hasConcession && Number(fa.concession_cancelled_amount || 0) === 0;
+  const showUpgradeBanner = hasOverdue && currentPlan && PLAN_NEXT[currentPlan];
 
   return (
     <div className="space-y-4">
@@ -159,9 +211,51 @@ function Page() {
             <Button variant="outline" size="sm" onClick={() => setPromoteOpen(true)}>
               <ArrowUpRight className="h-4 w-4" /> Promote Class
             </Button>
+            {currentPlan && PLAN_NEXT[currentPlan] && (
+              <Button variant="outline" size="sm" onClick={() => setUpgradePlanOpen(true)}>
+                <TrendingUp className="h-4 w-4" /> Upgrade Plan
+              </Button>
+            )}
+            {hasConcession && Number(fa.concession_cancelled_amount || 0) === 0 && (
+              <Button variant="outline" size="sm" onClick={() => setCancelConcessionOpen(true)}>
+                <X className="h-4 w-4" /> Cancel Concession
+              </Button>
+            )}
           </>
         ) : undefined}
       />
+
+      {(showConcessionBanner || showUpgradeBanner) && isAdmin && (
+        <div className="rounded-md border border-warning/40 bg-warning/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-foreground">Overdue payment detected</div>
+              <div className="mt-1 text-muted-foreground">
+                {showConcessionBanner && <>Consider cancelling the concession ({inr(Number(fa.discount_amount))}). </>}
+                {showUpgradeBanner && <>Consider upgrading from {PLAN_LABEL[currentPlan!]} to {PLAN_LABEL[PLAN_NEXT[currentPlan!]!]}.</>}
+              </div>
+              <div className="mt-2 flex gap-2">
+                {showConcessionBanner && (
+                  <Button size="sm" variant="outline" onClick={() => setCancelConcessionOpen(true)}>Cancel concession</Button>
+                )}
+                {showUpgradeBanner && (
+                  <Button size="sm" variant="outline" onClick={() => setUpgradePlanOpen(true)}>Upgrade plan</Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentPlan && (
+        <div className="text-xs text-muted-foreground">
+          Current plan: <strong className="text-foreground">{PLAN_LABEL[currentPlan]}</strong>
+          {fa && Number(fa.concession_cancelled_amount || 0) > 0 && (
+            <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 text-destructive">Concession cancelled · {inr(fa.concession_cancelled_amount)}</span>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Total Paid</div><div className="text-2xl font-bold text-success">{inr(totalPaid)}</div></CardContent></Card>
@@ -223,21 +317,94 @@ function Page() {
         <CardHeader><CardTitle>Installments</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Month</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead>{isAdmin && <TableHead></TableHead>}</TableRow></TableHeader>
             <TableBody>
               {installments.data?.map((i: any) => (
                 <TableRow key={i.id}>
                   <TableCell>{i.installment_no}</TableCell>
+                  <TableCell className="text-sm">{i.month_label || "—"}</TableCell>
                   <TableCell className="text-sm">{fmtDate(i.due_date)}</TableCell>
-                  <TableCell className="text-right">{inr(i.amount)}</TableCell>
+                  <TableCell className="text-right">
+                    {editInstId === i.id ? (
+                      <Input type="number" className="ml-auto h-8 w-28 text-right" value={editAmt}
+                        onChange={(e) => setEditAmt(Number(e.target.value))} />
+                    ) : inr(i.amount)}
+                  </TableCell>
                   <TableCell className="text-right">{inr(i.amount_paid)}</TableCell>
                   <TableCell><StatusBadge status={i.status} /></TableCell>
+                  {isAdmin && (
+                    <TableCell className="text-right">
+                      {editInstId === i.id ? (
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="ghost" onClick={async () => {
+                            if (editAmt < Number(i.amount_paid)) { toast.error("Amount cannot be less than already paid"); return; }
+                            const { error } = await supabase.from("installments").update({ amount: editAmt }).eq("id", i.id);
+                            if (error) { toast.error(error.message); return; }
+                            await logAudit({ actorName: fullName, actorRole: role, action: "edit_installment", entityType: "installment", entityId: i.id, oldValue: { amount: i.amount }, newValue: { amount: editAmt } });
+                            toast.success("Updated");
+                            setEditInstId(null);
+                            qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
+                          }}><Save className="h-3.5 w-3.5" /></Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditInstId(null)}><X className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      ) : i.status !== "paid" ? (
+                        <Button size="sm" variant="ghost" onClick={() => { setEditInstId(i.id); setEditAmt(Number(i.amount)); }}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {(planUpgrades.data?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader><CardTitle><TrendingUp className="mr-2 inline h-4 w-4" /> Plan Upgrade History</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>From</TableHead><TableHead>To</TableHead><TableHead>By</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {planUpgrades.data?.map((u: any) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="text-xs">{fmtDateTime(u.created_at)}</TableCell>
+                    <TableCell className="text-sm">{PLAN_LABEL[u.from_plan as PlanKind] || u.from_plan}</TableCell>
+                    <TableCell className="text-sm">{PLAN_LABEL[u.to_plan as PlanKind] || u.to_plan}</TableCell>
+                    <TableCell className="text-sm">{u.performed_by_name}</TableCell>
+                    <TableCell className="text-sm">{u.reason || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {(concessionCancels.data?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader><CardTitle><X className="mr-2 inline h-4 w-4" /> Concession Cancellation History</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Original</TableHead><TableHead className="text-right">Cancelled</TableHead><TableHead className="text-right">New Net</TableHead><TableHead>By</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {concessionCancels.data?.map((c: any) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="text-xs">{fmtDateTime(c.created_at)}</TableCell>
+                    <TableCell className="text-right text-sm">{inr(c.original_discount)}</TableCell>
+                    <TableCell className="text-right text-sm text-destructive">{inr(c.cancelled_amount)}</TableCell>
+                    <TableCell className="text-right text-sm">{inr(c.new_net_payable)}</TableCell>
+                    <TableCell className="text-sm">{c.performed_by_name}</TableCell>
+                    <TableCell className="text-sm">{c.reason || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle><History className="mr-2 inline h-4 w-4" /> Transfer History</CardTitle></CardHeader>
@@ -310,6 +477,34 @@ function Page() {
               qc.invalidateQueries({ queryKey: ["students"] });
             }}
           />
+          {fa && (
+            <CancelConcessionDialog
+              open={cancelConcessionOpen}
+              onClose={() => setCancelConcessionOpen(false)}
+              student={s}
+              feeAssignment={fa}
+              onDone={() => {
+                qc.invalidateQueries({ queryKey: ["student", studentId, "fee-assignment"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "concession-cancels"] });
+              }}
+            />
+          )}
+          {fa && currentPlan && PLAN_NEXT[currentPlan] && (
+            <UpgradePlanDialog
+              open={upgradePlanOpen}
+              onClose={() => setUpgradePlanOpen(false)}
+              student={s}
+              feeAssignment={fa}
+              currentPlan={currentPlan}
+              installments={installments.data || []}
+              onDone={() => {
+                qc.invalidateQueries({ queryKey: ["student", studentId, "fee-assignment"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "plan-upgrades"] });
+              }}
+            />
+          )}
         </>
       )}
     </div>
@@ -408,6 +603,135 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => submit.mutate()} disabled={submit.isPending || !batchId}>{submit.isPending ? "Transferring…" : "Confirm transfer"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; onDone: () => void }) {
+  const { fullName, role, user } = useAuth();
+  const original = Number(feeAssignment.discount_amount || 0);
+  const [amount, setAmount] = useState(original);
+  const [reason, setReason] = useState("Overdue payment");
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const cancel = Math.min(Math.max(0, Number(amount)), original);
+      const newDiscount = original - cancel;
+      const newNet = Number(feeAssignment.gross_fee) - newDiscount;
+      const { error: faErr } = await supabase.from("fee_assignments").update({
+        discount_amount: newDiscount,
+        net_payable: newNet,
+        concession_cancelled_amount: Number(feeAssignment.concession_cancelled_amount || 0) + cancel,
+      }).eq("id", feeAssignment.id);
+      if (faErr) throw faErr;
+      // Add the cancelled amount to the next unpaid instalment
+      const { data: ins } = await supabase.from("installments").select("*").eq("fee_assignment_id", feeAssignment.id).order("installment_no");
+      const nextUnpaid = (ins || []).find((i: any) => Number(i.amount) - Number(i.amount_paid) > 0);
+      if (nextUnpaid) {
+        await supabase.from("installments").update({ amount: Number(nextUnpaid.amount) + cancel }).eq("id", nextUnpaid.id);
+      }
+      const { error: ccErr } = await supabase.from("concession_cancellations").insert({
+        student_id: student.id,
+        fee_assignment_id: feeAssignment.id,
+        original_discount: original,
+        cancelled_amount: cancel,
+        new_net_payable: newNet,
+        reason: reason || null,
+        performed_by: user?.id ?? null,
+        performed_by_name: fullName,
+      });
+      if (ccErr) throw ccErr;
+      await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
+    },
+    onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
+    onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancel Concession</DialogTitle>
+          <DialogDescription>Original concession {inr(original)}. Cancelled amount is added back to the next unpaid instalment.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="mb-1 block text-xs">Amount to cancel (₹) *</Label><Input type="number" min={0} max={original} value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></div>
+          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || amount <= 0}>{submit.isPending ? "Saving…" : "Confirm"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan, installments, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; currentPlan: PlanKind; installments: any[]; onDone: () => void }) {
+  const { fullName, role, user } = useAuth();
+  const nextPlan = PLAN_NEXT[currentPlan]!;
+  const [reason, setReason] = useState("Payment delay");
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const newMonths = PLAN_MONTHS[nextPlan];
+      const paidSum = installments.reduce((a, i) => a + Number(i.amount_paid), 0);
+      const remaining = Number(feeAssignment.net_payable) - paidSum;
+      const paidCount = installments.filter((i) => Number(i.amount_paid) >= Number(i.amount)).length;
+      const newRemainingCount = newMonths.length - paidCount;
+      if (newRemainingCount <= 0) throw new Error("Plan already covers all paid instalments");
+      const splits = evenSplit(remaining, newRemainingCount);
+      const year = new Date().getFullYear();
+      const dueDay = 5;
+
+      // Delete unpaid instalments
+      const unpaidIds = installments.filter((i) => Number(i.amount_paid) < Number(i.amount)).map((i) => i.id);
+      if (unpaidIds.length > 0) await supabase.from("installments").delete().in("id", unpaidIds);
+
+      // Insert new instalments for the remaining months
+      const newRows = newMonths.slice(paidCount).map((m, idx) => ({
+        fee_assignment_id: feeAssignment.id,
+        student_id: student.id,
+        installment_no: paidCount + idx + 1,
+        amount: splits[idx],
+        due_date: new Date(year, m.month, dueDay).toISOString().slice(0, 10),
+        month_label: m.label,
+      }));
+      const { error: insErr } = await supabase.from("installments").insert(newRows);
+      if (insErr) throw insErr;
+
+      const { error: faErr } = await supabase.from("fee_assignments").update({
+        plan_kind: nextPlan, installment_count: newMonths.length,
+      }).eq("id", feeAssignment.id);
+      if (faErr) throw faErr;
+
+      await supabase.from("plan_upgrades").insert({
+        student_id: student.id, fee_assignment_id: feeAssignment.id,
+        from_plan: currentPlan, to_plan: nextPlan,
+        reason: reason || null,
+        performed_by: user?.id ?? null, performed_by_name: fullName,
+      });
+      await logAudit({ actorName: fullName, actorRole: role, action: "upgrade_plan", entityType: "student", entityId: student.id, oldValue: { plan: currentPlan }, newValue: { plan: nextPlan }, reason });
+    },
+    onSuccess: () => { toast.success(`Upgraded to ${PLAN_LABEL[nextPlan]}`); onDone(); onClose(); },
+    onError: (e: any) => toast.error(e?.message || "Upgrade failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Upgrade Instalment Plan</DialogTitle>
+          <DialogDescription>From {PLAN_LABEL[currentPlan]} to {PLAN_LABEL[nextPlan]}. Unpaid instalments are rebalanced across the new months.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>{submit.isPending ? "Upgrading…" : "Confirm upgrade"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

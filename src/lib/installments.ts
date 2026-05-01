@@ -1,6 +1,59 @@
 import type { Database } from "@/integrations/supabase/types";
 export type DiscountType = Database["public"]["Enums"]["discount_type"];
 export const SLAB_PCT: Record<string, number> = { slab_10: 10, slab_15: 15, slab_20: 20 };
+
+// New fixed-month instalment plans (replaces old 3/4 split logic for new enrollments).
+export type PlanKind = "plan_3" | "plan_4" | "plan_5";
+
+// Months are 0-indexed (June = 5)
+export const PLAN_MONTHS: Record<PlanKind, { label: string; month: number }[]> = {
+  plan_3: [
+    { label: "June", month: 5 },
+    { label: "August", month: 7 },
+    { label: "October", month: 9 },
+  ],
+  plan_4: [
+    { label: "June", month: 5 },
+    { label: "August", month: 7 },
+    { label: "October", month: 9 },
+    { label: "November", month: 10 },
+  ],
+  plan_5: [
+    { label: "June", month: 5 },
+    { label: "August", month: 7 },
+    { label: "October", month: 9 },
+    { label: "November", month: 10 },
+    { label: "December", month: 11 },
+  ],
+};
+
+export const PLAN_LABEL: Record<PlanKind, string> = {
+  plan_3: "Plan 1 · 3 instalments",
+  plan_4: "Plan 2 · 4 instalments",
+  plan_5: "Plan 3 · 5 instalments",
+};
+
+export const PLAN_NEXT: Record<PlanKind, PlanKind | null> = {
+  plan_3: "plan_4",
+  plan_4: "plan_5",
+  plan_5: null,
+};
+
+/** Generate due dates for a plan. dueDay defaults to the 5th. */
+export function planDueDates(plan: PlanKind, year: number, dueDay = 5): Date[] {
+  return PLAN_MONTHS[plan].map(({ month }) => new Date(year, month, dueDay));
+}
+
+/** Even-split helper for new plans (admin can edit per-instalment after). */
+export function evenSplit(net: number, count: number): number[] {
+  if (count <= 0) return [];
+  const base = Math.floor(net / count);
+  const rem = net - base * count;
+  const arr = Array(count).fill(base);
+  arr[count - 1] += rem;
+  return arr;
+}
+
 export function calculateNetPayable(opts: {
   grossFee: number; discountType: DiscountType;
   roundedAmount?: number; specialAmount?: number;
