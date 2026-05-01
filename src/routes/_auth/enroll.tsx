@@ -18,8 +18,8 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { UserPlus, ChevronLeft, ChevronRight, ShieldAlert, Check } from "lucide-react";
-import { inr, discountLabel } from "@/lib/format";
-import { calculateNetPayable, splitInstallments, defaultDueDates, type DiscountType } from "@/lib/installments";
+import { inr } from "@/lib/format";
+import { PLAN_MONTHS, PLAN_LABEL, evenSplit, type PlanKind } from "@/lib/installments";
 import { logAudit } from "@/lib/audit";
 import { useAuth } from "@/lib/auth";
 import { useCampus } from "@/lib/campus";
@@ -74,13 +74,16 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
 
   // Step 2 — Fee assignment
   const [fee, setFee] = useState({
-    discount_type: "round_off" as DiscountType,
-    rounded_amount: 0,
-    special_amount: 0,
-    discount_reason: "",
+    plan: "plan_3" as PlanKind,
+    concession_amount: 0,
+    concession_reason: "",
     transport_fee_monthly: 0,
     hostel_fee_monthly: 0,
+    due_day: 5,
+    plan_year: new Date().getFullYear(),
   });
+  // Per-instalment custom amounts (rupees). Auto-rebalanced when plan or net changes.
+  const [instAmounts, setInstAmounts] = useState<number[]>([]);
 
   const courses = useQuery({
     queryKey: ["enroll", "courses", campusId],
@@ -107,22 +110,20 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
   const selectedCourse = courses.data?.find((c) => c.id === profile.course_id);
   const grossFee = Number(selectedCourse?.gross_fee || 0);
 
-  const calc = useMemo(() => {
-    if (!grossFee) return { netPayable: 0, discountAmount: 0, installmentCount: 3 as 3 | 4 };
-    return calculateNetPayable({
-      grossFee,
-      discountType: fee.discount_type,
-      roundedAmount: fee.discount_type === "round_off" ? (fee.rounded_amount || grossFee) : undefined,
-      specialAmount: fee.discount_type === "special" ? fee.special_amount : undefined,
-    });
-  }, [grossFee, fee]);
+  const netPayable = Math.max(0, grossFee - Number(fee.concession_amount || 0));
+  const planMonths = PLAN_MONTHS[fee.plan];
+  const dueDates = useMemo(
+    () => planMonths.map(({ month }) => new Date(fee.plan_year, month, fee.due_day)),
+    [planMonths, fee.plan_year, fee.due_day],
+  );
 
-  const installments = useMemo(() => {
-    if (!calc.netPayable) return [];
-    const amounts = splitInstallments(calc.netPayable, calc.installmentCount);
-    const dates = defaultDueDates(new Date(), calc.installmentCount);
-    return amounts.map((amt, i) => ({ no: i + 1, amount: amt, due: dates[i] }));
-  }, [calc]);
+  // Reset/rebalance custom amounts whenever plan or net changes.
+  useMemo(() => {
+    setInstAmounts(evenSplit(netPayable, planMonths.length));
+  }, [fee.plan, netPayable]);
+
+  const sumInst = instAmounts.reduce((a, b) => a + Number(b || 0), 0);
+  const amountMismatch = Math.abs(sumInst - netPayable) > 0.5;
 
   const create = useMutation({
     mutationFn: async () => {
@@ -175,11 +176,13 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
         student_id: student.id,
         course_id: profile.course_id,
         gross_fee: grossFee,
-        discount_type: fee.discount_type,
-        discount_amount: calc.discountAmount,
-        discount_reason: fee.discount_reason || null,
-        net_payable: calc.netPayable,
-        installment_count: calc.installmentCount,
+        discount_type: "special",
+        discount_amount: Number(fee.concession_amount || 0),
+        discount_reason: fee.concession_reason || null,
+        net_payable: netPayable,
+        installment_count: planMonths.length,
+        plan_kind: fee.plan,
+        original_discount_amount: Number(fee.concession_amount || 0),
         registration_fee: Number(selectedCourse?.registration_fee || 0),
         material_fee: Number(selectedCourse?.material_fee || 0),
         transport_fee_monthly: profile.transport_required ? Number(fee.transport_fee_monthly) : 0,
@@ -189,12 +192,13 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
       if (faErr) throw faErr;
 
       // 4) installments
-      const rows = installments.map((i) => ({
+      const rows = planMonths.map((m, i) => ({
         fee_assignment_id: fa.id,
         student_id: student.id,
-        installment_no: i.no,
-        amount: i.amount,
-        due_date: i.due.toISOString().slice(0, 10),
+        installment_no: i + 1,
+        amount: Number(instAmounts[i] || 0),
+        due_date: dueDates[i].toISOString().slice(0, 10),
+        month_label: m.label,
       }));
       const { error: insErr } = await supabase.from("installments").insert(rows);
       if (insErr) throw insErr;
@@ -228,7 +232,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
       await logAudit({
         actorName, actorRole,
         action: "enroll_student", entityType: "student", entityId: student.id,
-        newValue: { admission_number: admNo, net_payable: calc.netPayable, installments: rows.length, campus_id: campusId, docs: docs.length },
+        newValue: { admission_number: admNo, net_payable: netPayable, plan: fee.plan, installments: rows.length, campus_id: campusId, docs: docs.length },
       });
       return student;
     },
@@ -243,7 +247,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
   const canStep2 =
     profile.full_name && profile.date_of_birth && profile.mobile && profile.permanent_address &&
     profile.father_name && profile.father_mobile && profile.course_id && profile.batch_id;
-  const canStep3 = grossFee > 0 && calc.netPayable > 0;
+  const canStep3 = grossFee > 0 && netPayable > 0 && !amountMismatch;
 
   return (
     <div>
