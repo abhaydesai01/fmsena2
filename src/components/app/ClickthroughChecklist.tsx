@@ -305,12 +305,13 @@ export function ClickthroughChecklist() {
             const isOpen = expanded === step.key;
             return (
               <div key={step.key} className="rounded-lg border border-border bg-card">
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : step.key)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                >
-                  <div
+                <div className="flex w-full items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : step.key)}
+                    className="flex flex-1 items-center gap-3 text-left"
+                  >
+                    <div
                     className={cn(
                       "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
                       overall === "pass" && "bg-success/15 text-success",
@@ -328,19 +329,23 @@ export function ClickthroughChecklist() {
                     </div>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">{step.description}</p>
                   </div>
+                  </button>
                   {!blocked && (
-                    <Link
-                      to={step.to}
-                      onClick={(e) => e.stopPropagation()}
-                      className="hidden sm:inline-flex"
-                    >
-                      <Button variant="outline" size="sm">
+                    <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
+                      <Link to={step.to} onClick={(e) => e.stopPropagation()}>
                         {step.ctaLabel} <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   )}
-                  {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : step.key)}
+                    aria-label={isOpen ? "Collapse" : "Expand"}
+                    className="shrink-0"
+                  >
+                    {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </button>
+                </div>
                 {isOpen && (
                   <div className="border-t border-border px-4 py-3">
                     <ul className="space-y-2">
@@ -360,11 +365,11 @@ export function ClickthroughChecklist() {
                       ))}
                     </ul>
                     <div className="mt-3 flex justify-end sm:hidden">
-                      <Link to={step.to}>
-                        <Button variant="outline" size="sm" disabled={blocked}>
+                      <Button asChild variant="outline" size="sm" disabled={blocked}>
+                        <Link to={step.to}>
                           {step.ctaLabel} <ExternalLink className="h-3.5 w-3.5" />
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 )}
