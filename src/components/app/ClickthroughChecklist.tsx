@@ -159,7 +159,7 @@ export function ClickthroughChecklist() {
         label: "Permission: record payments",
         status: role ? "pass" : "fail",
         detail: role
-          ? `Both admin and cashier roles can collect fees.`
+          ? `Both Admin and Accountant roles can collect fees.`
           : "No role detected — sign out and sign back in.",
       },
       {
