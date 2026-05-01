@@ -198,7 +198,7 @@ function Dashboard() {
           <CardContent>
             <p className="text-sm text-muted-foreground">
               Welcome to ENA Fees Management. Use the sidebar to access modules. Every receipt is sequentially numbered and audited.
-              {isAdmin ? " As an Admin you have access to all modules." : " As a Cashier you can collect fees and view ledgers."}
+              {isAdmin ? " As an Admin you have access to all modules." : " As an Accountant you can collect fees, clear dues, and view ledgers."}
             </p>
           </CardContent>
         </Card>
