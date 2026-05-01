@@ -609,6 +609,135 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
   );
 }
 
+function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; onDone: () => void }) {
+  const { fullName, role, user } = useAuth();
+  const original = Number(feeAssignment.discount_amount || 0);
+  const [amount, setAmount] = useState(original);
+  const [reason, setReason] = useState("Overdue payment");
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const cancel = Math.min(Math.max(0, Number(amount)), original);
+      const newDiscount = original - cancel;
+      const newNet = Number(feeAssignment.gross_fee) - newDiscount;
+      const { error: faErr } = await supabase.from("fee_assignments").update({
+        discount_amount: newDiscount,
+        net_payable: newNet,
+        concession_cancelled_amount: Number(feeAssignment.concession_cancelled_amount || 0) + cancel,
+      }).eq("id", feeAssignment.id);
+      if (faErr) throw faErr;
+      // Add the cancelled amount to the next unpaid instalment
+      const { data: ins } = await supabase.from("installments").select("*").eq("fee_assignment_id", feeAssignment.id).order("installment_no");
+      const nextUnpaid = (ins || []).find((i: any) => Number(i.amount) - Number(i.amount_paid) > 0);
+      if (nextUnpaid) {
+        await supabase.from("installments").update({ amount: Number(nextUnpaid.amount) + cancel }).eq("id", nextUnpaid.id);
+      }
+      const { error: ccErr } = await supabase.from("concession_cancellations").insert({
+        student_id: student.id,
+        fee_assignment_id: feeAssignment.id,
+        original_discount: original,
+        cancelled_amount: cancel,
+        new_net_payable: newNet,
+        reason: reason || null,
+        performed_by: user?.id ?? null,
+        performed_by_name: fullName,
+      });
+      if (ccErr) throw ccErr;
+      await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
+    },
+    onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
+    onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancel Concession</DialogTitle>
+          <DialogDescription>Original concession {inr(original)}. Cancelled amount is added back to the next unpaid instalment.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="mb-1 block text-xs">Amount to cancel (₹) *</Label><Input type="number" min={0} max={original} value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></div>
+          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || amount <= 0}>{submit.isPending ? "Saving…" : "Confirm"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan, installments, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; currentPlan: PlanKind; installments: any[]; onDone: () => void }) {
+  const { fullName, role, user } = useAuth();
+  const nextPlan = PLAN_NEXT[currentPlan]!;
+  const [reason, setReason] = useState("Payment delay");
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const newMonths = PLAN_MONTHS[nextPlan];
+      const paidSum = installments.reduce((a, i) => a + Number(i.amount_paid), 0);
+      const remaining = Number(feeAssignment.net_payable) - paidSum;
+      const paidCount = installments.filter((i) => Number(i.amount_paid) >= Number(i.amount)).length;
+      const newRemainingCount = newMonths.length - paidCount;
+      if (newRemainingCount <= 0) throw new Error("Plan already covers all paid instalments");
+      const splits = evenSplit(remaining, newRemainingCount);
+      const year = new Date().getFullYear();
+      const dueDay = 5;
+
+      // Delete unpaid instalments
+      const unpaidIds = installments.filter((i) => Number(i.amount_paid) < Number(i.amount)).map((i) => i.id);
+      if (unpaidIds.length > 0) await supabase.from("installments").delete().in("id", unpaidIds);
+
+      // Insert new instalments for the remaining months
+      const newRows = newMonths.slice(paidCount).map((m, idx) => ({
+        fee_assignment_id: feeAssignment.id,
+        student_id: student.id,
+        installment_no: paidCount + idx + 1,
+        amount: splits[idx],
+        due_date: new Date(year, m.month, dueDay).toISOString().slice(0, 10),
+        month_label: m.label,
+      }));
+      const { error: insErr } = await supabase.from("installments").insert(newRows);
+      if (insErr) throw insErr;
+
+      const { error: faErr } = await supabase.from("fee_assignments").update({
+        plan_kind: nextPlan, installment_count: newMonths.length,
+      }).eq("id", feeAssignment.id);
+      if (faErr) throw faErr;
+
+      await supabase.from("plan_upgrades").insert({
+        student_id: student.id, fee_assignment_id: feeAssignment.id,
+        from_plan: currentPlan, to_plan: nextPlan,
+        reason: reason || null,
+        performed_by: user?.id ?? null, performed_by_name: fullName,
+      });
+      await logAudit({ actorName: fullName, actorRole: role, action: "upgrade_plan", entityType: "student", entityId: student.id, oldValue: { plan: currentPlan }, newValue: { plan: nextPlan }, reason });
+    },
+    onSuccess: () => { toast.success(`Upgraded to ${PLAN_LABEL[nextPlan]}`); onDone(); onClose(); },
+    onError: (e: any) => toast.error(e?.message || "Upgrade failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Upgrade Instalment Plan</DialogTitle>
+          <DialogDescription>From {PLAN_LABEL[currentPlan]} to {PLAN_LABEL[nextPlan]}. Unpaid instalments are rebalanced across the new months.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>{submit.isPending ? "Upgrading…" : "Confirm upgrade"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onClose: () => void; student: any; onDone: () => void }) {
   const { fullName, role, user } = useAuth();
   const [toClass, setToClass] = useState<"11th" | "12th" | "dropper">("12th");
