@@ -16,6 +16,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useCampus } from "@/lib/campus";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Building2 } from "lucide-react";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; roles: ("admin" | "cashier")[] };
 
@@ -36,6 +41,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const { campuses, campus, campusId, setCampusId } = useCampus();
 
   const visible = navItems.filter((i) => role && i.roles.includes(role));
 
@@ -85,6 +91,15 @@ export function AppShell() {
           })}
         </nav>
         <div className="border-t border-border p-3">
+          {campus && (
+            <div className="mb-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Building2 className="h-3 w-3" /> Active Campus
+              </div>
+              <div className="truncate text-sm font-semibold text-foreground">{campus.name}</div>
+              {campus.city && <div className="text-xs text-muted-foreground">{campus.city}</div>}
+            </div>
+          )}
           <div className="mb-2 rounded-md bg-muted px-3 py-2">
             <div className="text-xs text-muted-foreground">Signed in as</div>
             <div className="truncate text-sm font-semibold text-foreground">{fullName || "—"}</div>
@@ -100,11 +115,33 @@ export function AppShell() {
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur lg:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur">
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(!open)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="font-semibold">ENA Fees</div>
+          <div className="font-semibold lg:hidden">ENA Fees</div>
+          <div className="ml-auto flex items-center gap-2">
+            {campus && (
+              <span className="hidden items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary sm:inline-flex">
+                <Building2 className="h-3 w-3" />
+                Active: {campus.name}
+              </span>
+            )}
+            {campuses.length > 1 && (
+              <Select value={campusId ?? undefined} onValueChange={(v) => setCampusId(v)}>
+                <SelectTrigger className="h-8 w-[180px] text-xs">
+                  <SelectValue placeholder="Switch campus" />
+                </SelectTrigger>
+                <SelectContent>
+                  {campuses.map((c) => (
+                    <SelectItem key={c.id} value={c.id} className="text-xs">
+                      {c.name}{c.city ? ` · ${c.city}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </header>
         <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
           <Outlet />
