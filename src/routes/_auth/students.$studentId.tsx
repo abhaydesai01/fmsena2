@@ -331,7 +331,7 @@ function Page() {
                   return;
                 }
                 setProfileSaving(true);
-                const { error } = await supabase.from("students").update(updates).eq("id", studentId);
+                const { error } = await supabase.from("students").update(updates as any).eq("id", studentId);
                 if (error) { setProfileSaving(false); toast.error(error.message); return; }
                 await logAudit({
                   actorName: fullName, actorRole: role,
