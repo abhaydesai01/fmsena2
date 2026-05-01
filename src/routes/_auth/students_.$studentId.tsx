@@ -296,6 +296,24 @@ function Page() {
                 board: s.board ?? "",
                 marks_10th: s.marks_10th ?? "",
                 marks_12th: s.marks_12th ?? "",
+                // NEET admission form fields
+                course_type: (s as any).course_type ?? "",
+                course_stream: (s as any).course_stream ?? "",
+                pan_number: (s as any).pan_number ?? "",
+                puc_hall_ticket_no: (s as any).puc_hall_ticket_no ?? "",
+                sslc_register_number: (s as any).sslc_register_number ?? "",
+                puc_total_percent: (s as any).puc_total_percent ?? "",
+                puc_pcmb_percent: (s as any).puc_pcmb_percent ?? "",
+                neet_marks_obtained: (s as any).neet_marks_obtained ?? "",
+                admission_type: (s as any).admission_type ?? "",
+                sub_caste_group: (s as any).sub_caste_group ?? "",
+                college_type: (s as any).college_type ?? "",
+                van_facility_required: (s as any).van_facility_required ?? false,
+                present_address_pincode: (s as any).present_address_pincode ?? "",
+                permanent_address_pincode: (s as any).permanent_address_pincode ?? "",
+                mobile_secondary: (s as any).mobile_secondary ?? "",
+                admission_place: (s as any).admission_place ?? "",
+                family_annual_income: (s as any).family_annual_income ?? "",
               });
               setProfileEdit(true);
             }}>
@@ -377,6 +395,23 @@ function Page() {
               <EditField k="Board" v={profileDraft.board} onChange={(x) => setProfileDraft((p) => ({ ...p, board: x }))} />
               <EditField k="Marks 10th" v={profileDraft.marks_10th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_10th: x }))} />
               <EditField k="Marks 12th" v={profileDraft.marks_12th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_12th: x }))} />
+              <EditSelect k="Course Type" v={profileDraft.course_type} options={["long_term", "crash_course"]} onChange={(x) => setProfileDraft((p) => ({ ...p, course_type: x }))} />
+              <EditSelect k="Course Stream" v={profileDraft.course_stream} options={["neet", "kcet"]} onChange={(x) => setProfileDraft((p) => ({ ...p, course_stream: x }))} />
+              <EditSelect k="College Type" v={profileDraft.college_type} options={["state_board", "cbse_board"]} onChange={(x) => setProfileDraft((p) => ({ ...p, college_type: x }))} />
+              <EditField k="PUC Hall Ticket No" v={profileDraft.puc_hall_ticket_no} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_hall_ticket_no: x }))} />
+              <EditField k="SSLC Register No" v={profileDraft.sslc_register_number} onChange={(x) => setProfileDraft((p) => ({ ...p, sslc_register_number: x }))} />
+              <EditField k="PUC Total %" v={profileDraft.puc_total_percent} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_total_percent: x }))} />
+              <EditField k="PUC PCMB %" v={profileDraft.puc_pcmb_percent} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_pcmb_percent: x }))} />
+              <EditField k="NEET Marks Obtained" v={profileDraft.neet_marks_obtained} onChange={(x) => setProfileDraft((p) => ({ ...p, neet_marks_obtained: x }))} />
+              <EditSelect k="Admission Type" v={profileDraft.admission_type} options={["residential", "non_residential"]} onChange={(x) => setProfileDraft((p) => ({ ...p, admission_type: x }))} />
+              <EditSelect k="Sub Caste Group" v={profileDraft.sub_caste_group} options={["CA-I", "IIA", "IIB", "IIIA", "IIIB"]} onChange={(x) => setProfileDraft((p) => ({ ...p, sub_caste_group: x }))} />
+              <EditSelect k="Van Facility" v={String(profileDraft.van_facility_required)} options={["true", "false"]} onChange={(x) => setProfileDraft((p) => ({ ...p, van_facility_required: x === "true" }))} />
+              <EditField k="Present Address Pincode" v={profileDraft.present_address_pincode} onChange={(x) => setProfileDraft((p) => ({ ...p, present_address_pincode: x }))} />
+              <EditField k="Permanent Address Pincode" v={profileDraft.permanent_address_pincode} onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address_pincode: x }))} />
+              <EditField k="Mobile (Secondary)" v={profileDraft.mobile_secondary} onChange={(x) => setProfileDraft((p) => ({ ...p, mobile_secondary: x }))} />
+              <EditField k="PAN Number" v={profileDraft.pan_number} onChange={(x) => setProfileDraft((p) => ({ ...p, pan_number: x }))} />
+              <EditField k="Admission Place" v={profileDraft.admission_place} onChange={(x) => setProfileDraft((p) => ({ ...p, admission_place: x }))} />
+              <EditField k="Family Annual Income (₹)" v={profileDraft.family_annual_income} onChange={(x) => setProfileDraft((p) => ({ ...p, family_annual_income: x }))} />
             </>
           ) : (
             <>
@@ -397,6 +432,23 @@ function Page() {
               <Info k="Previous Class" v={(s as any).previous_class || "—"} />
               <Info k="Admission Date" v={fmtDate(s.admission_date)} />
               <Info k="Academic Year" v={s.academic_year} />
+              <Info k="Course Type" v={(s as any).course_type || "—"} />
+              <Info k="Course Stream" v={((s as any).course_stream || "—").toString().toUpperCase()} />
+              <Info k="College Type" v={(s as any).college_type || "—"} />
+              <Info k="PUC Hall Ticket No" v={(s as any).puc_hall_ticket_no || "—"} />
+              <Info k="SSLC Register No" v={(s as any).sslc_register_number || "—"} />
+              <Info k="PUC Total %" v={(s as any).puc_total_percent ?? "—"} />
+              <Info k="PUC PCMB %" v={(s as any).puc_pcmb_percent ?? "—"} />
+              <Info k="NEET Marks Obtained" v={(s as any).neet_marks_obtained || "—"} />
+              <Info k="Admission Type" v={(s as any).admission_type || "—"} />
+              <Info k="Sub Caste Group" v={(s as any).sub_caste_group || "—"} />
+              <Info k="Van Facility" v={(s as any).van_facility_required ? "Required" : "Not Required"} />
+              <Info k="Present Address Pincode" v={(s as any).present_address_pincode || "—"} />
+              <Info k="Permanent Address Pincode" v={(s as any).permanent_address_pincode || "—"} />
+              <Info k="Mobile (Secondary)" v={(s as any).mobile_secondary || "—"} />
+              <Info k="PAN Number" v={(s as any).pan_number || "—"} />
+              <Info k="Admission Place" v={(s as any).admission_place || "—"} />
+              <Info k="Family Annual Income" v={(s as any).family_annual_income ? inr((s as any).family_annual_income) : "—"} />
             </>
           )}
         </CardContent>

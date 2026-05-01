@@ -724,13 +724,18 @@ export type Database = {
           academic_year: string
           admission_date: string
           admission_number: string
+          admission_place: string | null
+          admission_type: string | null
           batch_id: string
           blood_group: string | null
           board: string | null
           campus_id: string
           category: string | null
           class_year: Database["public"]["Enums"]["class_year"]
+          college_type: string | null
           course_id: string
+          course_stream: string | null
+          course_type: string | null
           created_at: string
           created_by: string | null
           current_address: string | null
@@ -739,6 +744,7 @@ export type Database = {
           emergency_mobile: string | null
           emergency_name: string | null
           emergency_relation: string | null
+          family_annual_income: number | null
           father_mobile: string
           father_name: string
           father_occupation: string | null
@@ -755,28 +761,39 @@ export type Database = {
           marksheet_12_url: string | null
           medium: string | null
           mobile: string
+          mobile_secondary: string | null
           mother_mobile: string | null
           mother_name: string | null
           mother_tongue: string | null
           nationality: string | null
           neet_attempt: number | null
+          neet_marks_obtained: string | null
+          pan_number: string | null
           parent_annual_income: number | null
           parent_email: string | null
           passport_photo_copies: number | null
           permanent_address: string
+          permanent_address_pincode: string | null
           photo_url: string | null
           place_of_birth: string | null
+          present_address_pincode: string | null
           previous_class: string | null
           previous_neet_score: string | null
           previous_school: string | null
+          puc_hall_ticket_no: string | null
+          puc_pcmb_percent: number | null
+          puc_total_percent: number | null
           referred_by: string | null
           religion: string | null
           sibling_info: string | null
+          sslc_register_number: string | null
           status: Database["public"]["Enums"]["student_status"]
           sub_caste: string | null
+          sub_caste_group: string | null
           tc_url: string | null
           transport_required: boolean
           updated_at: string
+          van_facility_required: boolean
         }
         Insert: {
           aadhaar_doc_url?: string | null
@@ -784,13 +801,18 @@ export type Database = {
           academic_year?: string
           admission_date?: string
           admission_number: string
+          admission_place?: string | null
+          admission_type?: string | null
           batch_id: string
           blood_group?: string | null
           board?: string | null
           campus_id: string
           category?: string | null
           class_year: Database["public"]["Enums"]["class_year"]
+          college_type?: string | null
           course_id: string
+          course_stream?: string | null
+          course_type?: string | null
           created_at?: string
           created_by?: string | null
           current_address?: string | null
@@ -799,6 +821,7 @@ export type Database = {
           emergency_mobile?: string | null
           emergency_name?: string | null
           emergency_relation?: string | null
+          family_annual_income?: number | null
           father_mobile: string
           father_name: string
           father_occupation?: string | null
@@ -815,28 +838,39 @@ export type Database = {
           marksheet_12_url?: string | null
           medium?: string | null
           mobile: string
+          mobile_secondary?: string | null
           mother_mobile?: string | null
           mother_name?: string | null
           mother_tongue?: string | null
           nationality?: string | null
           neet_attempt?: number | null
+          neet_marks_obtained?: string | null
+          pan_number?: string | null
           parent_annual_income?: number | null
           parent_email?: string | null
           passport_photo_copies?: number | null
           permanent_address: string
+          permanent_address_pincode?: string | null
           photo_url?: string | null
           place_of_birth?: string | null
+          present_address_pincode?: string | null
           previous_class?: string | null
           previous_neet_score?: string | null
           previous_school?: string | null
+          puc_hall_ticket_no?: string | null
+          puc_pcmb_percent?: number | null
+          puc_total_percent?: number | null
           referred_by?: string | null
           religion?: string | null
           sibling_info?: string | null
+          sslc_register_number?: string | null
           status?: Database["public"]["Enums"]["student_status"]
           sub_caste?: string | null
+          sub_caste_group?: string | null
           tc_url?: string | null
           transport_required?: boolean
           updated_at?: string
+          van_facility_required?: boolean
         }
         Update: {
           aadhaar_doc_url?: string | null
@@ -844,13 +878,18 @@ export type Database = {
           academic_year?: string
           admission_date?: string
           admission_number?: string
+          admission_place?: string | null
+          admission_type?: string | null
           batch_id?: string
           blood_group?: string | null
           board?: string | null
           campus_id?: string
           category?: string | null
           class_year?: Database["public"]["Enums"]["class_year"]
+          college_type?: string | null
           course_id?: string
+          course_stream?: string | null
+          course_type?: string | null
           created_at?: string
           created_by?: string | null
           current_address?: string | null
@@ -859,6 +898,7 @@ export type Database = {
           emergency_mobile?: string | null
           emergency_name?: string | null
           emergency_relation?: string | null
+          family_annual_income?: number | null
           father_mobile?: string
           father_name?: string
           father_occupation?: string | null
@@ -875,28 +915,39 @@ export type Database = {
           marksheet_12_url?: string | null
           medium?: string | null
           mobile?: string
+          mobile_secondary?: string | null
           mother_mobile?: string | null
           mother_name?: string | null
           mother_tongue?: string | null
           nationality?: string | null
           neet_attempt?: number | null
+          neet_marks_obtained?: string | null
+          pan_number?: string | null
           parent_annual_income?: number | null
           parent_email?: string | null
           passport_photo_copies?: number | null
           permanent_address?: string
+          permanent_address_pincode?: string | null
           photo_url?: string | null
           place_of_birth?: string | null
+          present_address_pincode?: string | null
           previous_class?: string | null
           previous_neet_score?: string | null
           previous_school?: string | null
+          puc_hall_ticket_no?: string | null
+          puc_pcmb_percent?: number | null
+          puc_total_percent?: number | null
           referred_by?: string | null
           religion?: string | null
           sibling_info?: string | null
+          sslc_register_number?: string | null
           status?: Database["public"]["Enums"]["student_status"]
           sub_caste?: string | null
+          sub_caste_group?: string | null
           tc_url?: string | null
           transport_required?: boolean
           updated_at?: string
+          van_facility_required?: boolean
         }
         Relationships: [
           {
