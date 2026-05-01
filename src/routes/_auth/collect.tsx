@@ -54,6 +54,7 @@ function Page() {
   const [lastReceipt, setLastReceipt] = useState<{ no: string; student: string; amount: number } | null>(null);
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
+  const [studentStatusFilter, setStudentStatusFilter] = useState<"all" | "active" | "discontinued" | "completed">("active");
 
   const courses = useQuery({
     queryKey: ["collect", "courses"],
@@ -68,16 +69,16 @@ function Page() {
   });
 
   const browse = useQuery({
-    queryKey: ["collect", "browse", courseFilter, statusFilter],
+    queryKey: ["collect", "browse", courseFilter, statusFilter, studentStatusFilter],
     enabled: !selected && q.trim().length < 2,
     queryFn: async () => {
       let sQ = supabase
         .from("students")
         .select("id, admission_number, full_name, mobile, course_id, courses(name), batches(name)")
-        .eq("status", "active")
         .order("full_name")
         .limit(500);
       if (courseFilter !== "all") sQ = sQ.eq("course_id", courseFilter);
+      if (studentStatusFilter !== "all") sQ = sQ.eq("status", studentStatusFilter as any);
       const { data: students } = await sQ;
       const list = (students || []) as (Student & { course_id: string })[];
       if (list.length === 0) return [] as BrowseRow[];
@@ -245,8 +246,17 @@ function Page() {
                   <SelectItem value="overdue">Overdue</SelectItem>
                 </SelectContent>
               </Select>
-              {(courseFilter !== "all" || statusFilter !== "all") && (
-                <Button variant="ghost" size="sm" onClick={() => { setCourseFilter("all"); setStatusFilter("all"); }}>
+              <Select value={studentStatusFilter} onValueChange={(v: any) => setStudentStatusFilter(v)}>
+                <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Student status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All students</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="discontinued">Discontinued</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+              {(courseFilter !== "all" || statusFilter !== "all" || studentStatusFilter !== "active") && (
+                <Button variant="ghost" size="sm" onClick={() => { setCourseFilter("all"); setStatusFilter("all"); setStudentStatusFilter("active"); }}>
                   <X className="h-3.5 w-3.5" /> Clear
                 </Button>
               )}
