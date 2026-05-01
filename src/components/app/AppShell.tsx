@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { useAuth } from "@/lib/auth";
+import { useAuth, roleLabel } from "@/lib/auth";
 import {
   LayoutDashboard,
   GraduationCap,
@@ -104,7 +104,7 @@ export function AppShell() {
             <div className="text-xs text-muted-foreground">Signed in as</div>
             <div className="truncate text-sm font-semibold text-foreground">{fullName || "—"}</div>
             <div className="text-xs uppercase tracking-wide text-accent-foreground/80">
-              <span className="rounded bg-accent/30 px-1.5 py-0.5 text-[10px] font-bold">{role}</span>
+              <span className="rounded bg-accent/30 px-1.5 py-0.5 text-[10px] font-bold">{roleLabel(role)}</span>
             </div>
           </div>
           <Button variant="outline" size="sm" className="w-full" onClick={handleSignOut}>
