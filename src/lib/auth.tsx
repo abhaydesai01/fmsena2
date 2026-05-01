@@ -4,6 +4,13 @@ import type { Session, User } from "@supabase/supabase-js";
 
 export type Role = "admin" | "cashier";
 
+/** UI-facing label for a role. DB enum keeps `cashier`, UI shows "Accountant". */
+export function roleLabel(r: Role | null | undefined): string {
+  if (r === "admin") return "Admin";
+  if (r === "cashier") return "Accountant";
+  return "—";
+}
+
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
@@ -12,6 +19,7 @@ interface AuthContextValue {
   loading: boolean;
   isAdmin: boolean;
   isCashier: boolean;
+  isAccountant: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -87,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         isAdmin: role === "admin",
         isCashier: role === "cashier",
+        isAccountant: role === "cashier",
         signIn,
         signUp,
         signOut,
