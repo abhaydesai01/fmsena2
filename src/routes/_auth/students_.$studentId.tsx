@@ -26,7 +26,7 @@ import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { PLAN_LABEL, PLAN_NEXT, PLAN_MONTHS, evenSplit, type PlanKind } from "@/lib/installments";
 
-export const Route = createFileRoute("/_auth/students/$studentId")({ component: Page });
+export const Route = createFileRoute("/_auth/students_/$studentId")({ component: Page });
 
 function Page() {
   const { studentId } = Route.useParams();
