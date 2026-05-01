@@ -491,9 +491,12 @@ function PaymentDialog({
             amount, payment_mode: mode,
             cheque_number: chequeNo, cheque_bank: chequeBank, cheque_date: chequeDate || undefined,
             upi_reference: upiRef, card_last4: cardLast4, notes,
-          })} disabled={pending || !amount}>
+          })} disabled={pending || !amount || amount > remaining}>
             {pending ? "Recording…" : <><Receipt className="h-4 w-4" /> Record & Generate Receipt</>}
           </Button>
+          {amount > remaining && (
+            <div className="text-xs text-destructive">Amount exceeds outstanding {inr(remaining)}.</div>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
