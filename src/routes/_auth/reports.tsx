@@ -14,8 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BarChart3, IndianRupee, Receipt, AlertCircle, Download, Calendar } from "lucide-react";
+import { BarChart3, IndianRupee, Receipt, AlertCircle, Download, Calendar, Percent, ArrowUpCircle } from "lucide-react";
 import { inr, fmtDate, modeLabel, exportCSV } from "@/lib/format";
+import { PLAN_LABEL, type PlanKind } from "@/lib/installments";
 
 export const Route = createFileRoute("/_auth/reports")({ component: Page });
 
@@ -52,12 +53,147 @@ function Page() {
           <TabsTrigger value="outstanding"><AlertCircle className="h-4 w-4" /> Outstanding</TabsTrigger>
           <TabsTrigger value="monthly"><Calendar className="h-4 w-4" /> Monthly Dues</TabsTrigger>
           <TabsTrigger value="batches"><BarChart3 className="h-4 w-4" /> By Course</TabsTrigger>
+          <TabsTrigger value="concessions"><Percent className="h-4 w-4" /> Concessions</TabsTrigger>
+          <TabsTrigger value="upgrades"><ArrowUpCircle className="h-4 w-4" /> Plan Upgrades</TabsTrigger>
         </TabsList>
         <TabsContent value="collections" className="mt-4"><CollectionsReport from={from} to={to} /></TabsContent>
         <TabsContent value="outstanding" className="mt-4"><OutstandingReport /></TabsContent>
         <TabsContent value="monthly" className="mt-4"><MonthlyDuesReport /></TabsContent>
         <TabsContent value="batches" className="mt-4"><CourseReport /></TabsContent>
+        <TabsContent value="concessions" className="mt-4"><ConcessionsReport /></TabsContent>
+        <TabsContent value="upgrades" className="mt-4"><PlanUpgradesReport /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function ConcessionsReport() {
+  const q = useQuery({
+    queryKey: ["report", "concessions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fee_assignments")
+        .select("id, gross_fee, discount_type, discount_amount, original_discount_amount, concession_cancelled_amount, net_payable, plan_kind, students(full_name, admission_number, mobile, courses(name))")
+        .gt("discount_amount", 0)
+        .limit(2000);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+  const totals = useMemo(() => {
+    const list = (q.data || []) as any[];
+    const granted = list.reduce((s, r) => s + Number(r.original_discount_amount || r.discount_amount || 0), 0);
+    const cancelled = list.reduce((s, r) => s + Number(r.concession_cancelled_amount || 0), 0);
+    return { granted, cancelled, net: granted - cancelled, count: list.length };
+  }, [q.data]);
+  if (q.isLoading) return <Loading />;
+  return (
+    <div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-4">
+        <StatCard label="Students" value={totals.count} icon={Percent} tone="info" />
+        <StatCard label="Granted" value={inr(totals.granted)} icon={IndianRupee} tone="default" />
+        <StatCard label="Cancelled" value={inr(totals.cancelled)} icon={AlertCircle} tone="destructive" />
+        <StatCard label="Net Active" value={inr(totals.net)} icon={IndianRupee} tone="success" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Concessions</CardTitle>
+          <Button variant="outline" size="sm" disabled={!q.data?.length}
+            onClick={() => exportCSV(`concessions_${Date.now()}.csv`, (q.data as any[]).map((r) => ({
+              admission_number: r.students?.admission_number, student: r.students?.full_name, mobile: r.students?.mobile,
+              course: r.students?.courses?.name, plan: r.plan_kind,
+              gross_fee: r.gross_fee, discount_type: r.discount_type,
+              original_discount: r.original_discount_amount || r.discount_amount,
+              cancelled: r.concession_cancelled_amount, active_discount: r.discount_amount,
+              net_payable: r.net_payable,
+            })))}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Admission</TableHead><TableHead>Student</TableHead><TableHead>Course</TableHead>
+              <TableHead>Type</TableHead><TableHead className="text-right">Granted</TableHead>
+              <TableHead className="text-right">Cancelled</TableHead><TableHead className="text-right">Active</TableHead>
+              <TableHead className="text-right">Net Payable</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {(q.data as any[]).map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono text-xs">{r.students?.admission_number}</TableCell>
+                  <TableCell>{r.students?.full_name}<div className="text-xs text-muted-foreground">{r.students?.mobile}</div></TableCell>
+                  <TableCell className="text-sm">{r.students?.courses?.name}</TableCell>
+                  <TableCell className="text-xs capitalize">{(r.discount_type || "").replace("_", " ")}</TableCell>
+                  <TableCell className="text-right">{inr(r.original_discount_amount || r.discount_amount)}</TableCell>
+                  <TableCell className="text-right text-destructive">{inr(r.concession_cancelled_amount || 0)}</TableCell>
+                  <TableCell className="text-right text-success">{inr(r.discount_amount)}</TableCell>
+                  <TableCell className="text-right font-semibold">{inr(r.net_payable)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PlanUpgradesReport() {
+  const q = useQuery({
+    queryKey: ["report", "plan-upgrades"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("plan_upgrades")
+        .select("id, created_at, from_plan, to_plan, reason, performed_by_name, students(full_name, admission_number, courses(name))")
+        .order("created_at", { ascending: false }).limit(1000);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+  if (q.isLoading) return <Loading />;
+  const list = (q.data || []) as any[];
+  return (
+    <div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2">
+        <StatCard label="Total Upgrades" value={list.length} icon={ArrowUpCircle} tone="info" />
+        <StatCard label="To Plan 3 (5 instalments)" value={list.filter((u) => u.to_plan === "plan_5").length} icon={ArrowUpCircle} tone="warning" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Plan Upgrade History</CardTitle>
+          <Button variant="outline" size="sm" disabled={!list.length}
+            onClick={() => exportCSV(`plan_upgrades_${Date.now()}.csv`, list.map((u) => ({
+              date: u.created_at, admission_number: u.students?.admission_number, student: u.students?.full_name,
+              course: u.students?.courses?.name, from: u.from_plan, to: u.to_plan, reason: u.reason, by: u.performed_by_name,
+            })))}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Date</TableHead><TableHead>Admission</TableHead><TableHead>Student</TableHead>
+              <TableHead>Course</TableHead><TableHead>From</TableHead><TableHead>To</TableHead>
+              <TableHead>Reason</TableHead><TableHead>By</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {list.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="text-sm">{fmtDate(u.created_at)}</TableCell>
+                  <TableCell className="font-mono text-xs">{u.students?.admission_number}</TableCell>
+                  <TableCell>{u.students?.full_name}</TableCell>
+                  <TableCell className="text-sm">{u.students?.courses?.name}</TableCell>
+                  <TableCell className="text-sm">{PLAN_LABEL[u.from_plan as PlanKind] || u.from_plan}</TableCell>
+                  <TableCell className="text-sm">{PLAN_LABEL[u.to_plan as PlanKind] || u.to_plan}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{u.reason || "—"}</TableCell>
+                  <TableCell className="text-sm">{u.performed_by_name}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
