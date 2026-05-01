@@ -637,6 +637,36 @@ function Info({ k, v }: { k: string; v: string }) {
   );
 }
 
+function EditField({ k, v, onChange, type = "text" }: { k: string; v: any; onChange: (x: string) => void; type?: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Input className="h-8" type={type} value={v ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function EditTextarea({ k, v, onChange }: { k: string; v: any; onChange: (x: string) => void }) {
+  return (
+    <div className="rounded-md border border-border p-2 md:col-span-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Textarea rows={2} value={v ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function EditSelect({ k, v, options, onChange }: { k: string; v: any; options: string[]; onChange: (x: string) => void }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Select value={v || ""} onValueChange={onChange}>
+        <SelectTrigger className="h-8"><SelectValue placeholder="Select…" /></SelectTrigger>
+        <SelectContent>{options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function DocsUploader({ onUpload, pending }: { onUpload: (label: string, file: File) => void; pending: boolean }) {
   const [label, setLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
