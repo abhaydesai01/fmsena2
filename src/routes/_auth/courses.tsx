@@ -59,6 +59,7 @@ import {
   Calendar as CalendarIcon,
   Trash2,
   Power,
+  Building2,
 } from "lucide-react";
 import { inr, fmtDate } from "@/lib/format";
 import { logAudit } from "@/lib/audit";
@@ -69,6 +70,7 @@ import type { Database } from "@/integrations/supabase/types";
 type Course = Database["public"]["Tables"]["courses"]["Row"];
 type Batch = Database["public"]["Tables"]["batches"]["Row"];
 type BatchStatus = Database["public"]["Enums"]["batch_status"];
+type Campus = Database["public"]["Tables"]["campuses"]["Row"];
 
 export const Route = createFileRoute("/_auth/courses")({ component: Page });
 
@@ -99,6 +101,9 @@ function Page() {
       />
       <Tabs defaultValue="courses" className="w-full">
         <TabsList>
+          <TabsTrigger value="campuses">
+            <Building2 className="h-4 w-4" /> Campuses
+          </TabsTrigger>
           <TabsTrigger value="courses">
             <BookOpen className="h-4 w-4" /> Courses
           </TabsTrigger>
@@ -106,6 +111,9 @@ function Page() {
             <Layers className="h-4 w-4" /> Batches
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="campuses" className="mt-4">
+          <CampusesPanel />
+        </TabsContent>
         <TabsContent value="courses" className="mt-4">
           <CoursesPanel />
         </TabsContent>
@@ -114,6 +122,304 @@ function Page() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/* ----------------------------- Campuses ----------------------------- */
+
+type CampusFormState = {
+  name: string;
+  city: string;
+  address: string;
+  is_active: boolean;
+};
+
+const emptyCampus: CampusFormState = {
+  name: "",
+  city: "",
+  address: "",
+  is_active: true,
+};
+
+function CampusesPanel() {
+  const qc = useQueryClient();
+  const { fullName, role } = useAuth();
+  const { setCampusId } = useCampus();
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Campus | null>(null);
+  const [form, setForm] = useState<CampusFormState>(emptyCampus);
+
+  const campuses = useQuery({
+    queryKey: ["campuses-manage"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("campuses")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Campus[];
+    },
+  });
+
+  const courseCounts = useQuery({
+    queryKey: ["campus-course-counts"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("courses").select("campus_id");
+      if (error) throw error;
+      const map: Record<string, number> = {};
+      for (const c of data || []) map[c.campus_id] = (map[c.campus_id] || 0) + 1;
+      return map;
+    },
+  });
+
+  const startCreate = () => {
+    setEditing(null);
+    setForm(emptyCampus);
+    setOpen(true);
+  };
+
+  const startEdit = (c: Campus) => {
+    setEditing(c);
+    setForm({
+      name: c.name,
+      city: c.city || "",
+      address: c.address || "",
+      is_active: c.is_active,
+    });
+    setOpen(true);
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!form.name.trim()) throw new Error("Campus name is required");
+      const payload = {
+        name: form.name.trim(),
+        city: form.city.trim() || null,
+        address: form.address.trim() || null,
+        is_active: form.is_active,
+      };
+      if (editing) {
+        const { error } = await supabase.from("campuses").update(payload).eq("id", editing.id);
+        if (error) throw error;
+        await logAudit({
+          actorName: fullName || "—",
+          actorRole: role,
+          action: "update",
+          entityType: "campus",
+          entityId: editing.id,
+          oldValue: editing,
+          newValue: payload,
+        });
+        return { kind: "updated" as const, id: editing.id };
+      } else {
+        const { data, error } = await supabase.from("campuses").insert(payload).select().single();
+        if (error) throw error;
+        await logAudit({
+          actorName: fullName || "—",
+          actorRole: role,
+          action: "create",
+          entityType: "campus",
+          entityId: data?.id,
+          newValue: payload,
+        });
+        return { kind: "created" as const, id: data!.id };
+      }
+    },
+    onSuccess: (res) => {
+      toast.success(`Campus ${res.kind}`);
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["campuses-manage"] });
+      qc.invalidateQueries({ queryKey: ["campuses-all"] });
+      if (res.kind === "created") {
+        // switch active campus to the new one so admin can immediately add courses
+        setCampusId(res.id);
+        toast.message("Switched to new campus — add courses & fee structure under the Courses tab.");
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save campus");
+    },
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: async (c: Campus) => {
+      const { error } = await supabase
+        .from("campuses")
+        .update({ is_active: !c.is_active })
+        .eq("id", c.id);
+      if (error) throw error;
+      await logAudit({
+        actorName: fullName || "—",
+        actorRole: role,
+        action: c.is_active ? "deactivate" : "activate",
+        entityType: "campus",
+        entityId: c.id,
+        oldValue: { is_active: c.is_active },
+        newValue: { is_active: !c.is_active },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Campus status updated");
+      qc.invalidateQueries({ queryKey: ["campuses-manage"] });
+      qc.invalidateQueries({ queryKey: ["campuses-all"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Failed"),
+  });
+
+  const list = campuses.data || [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <div>
+          <CardTitle>Campuses</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {list.length} campus{list.length === 1 ? "" : "es"} configured. Each campus has its own
+            courses, batches, and fee structure.
+          </p>
+        </div>
+        <Button onClick={startCreate}>
+          <Plus className="h-4 w-4" /> New Campus
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {campuses.isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : list.length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title="No campuses yet"
+            description="Add your first campus to start configuring courses and fee structures."
+            action={
+              <Button onClick={startCreate}>
+                <Plus className="h-4 w-4" /> Create Campus
+              </Button>
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campus</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead>Address</TableHead>
+                  <TableHead className="text-right">Courses</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell>{c.city || "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate">{c.address || "—"}</TableCell>
+                    <TableCell className="text-right">{courseCounts.data?.[c.id] ?? 0}</TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          c.is_active
+                            ? "inline-flex items-center rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success"
+                            : "inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                        }
+                      >
+                        {c.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setCampusId(c.id);
+                            toast.success(`Switched to ${c.name}`);
+                          }}
+                          title="Set as active campus"
+                        >
+                          Use
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => startEdit(c)} title="Edit">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleActive.mutate(c)}
+                          title={c.is_active ? "Deactivate" : "Activate"}
+                        >
+                          <Power className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Campus" : "New Campus"}</DialogTitle>
+            <DialogDescription>
+              After creating, you'll be switched to this campus so you can immediately add its
+              courses and fee structure under the Courses tab.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Label htmlFor="cm-name">Campus Name *</Label>
+              <Input
+                id="cm-name"
+                placeholder="e.g. Dharwad Main"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cm-city">City</Label>
+              <Input
+                id="cm-city"
+                placeholder="Dharwad"
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="cm-addr">Address</Label>
+              <Input
+                id="cm-addr"
+                placeholder="Street, area, landmark"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <Switch
+                id="cm-active"
+                checked={form.is_active}
+                onCheckedChange={(v) => setForm({ ...form, is_active: v })}
+              />
+              <Label htmlFor="cm-active" className="cursor-pointer">
+                Active — selectable from the campus switcher
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending ? "Saving…" : editing ? "Save Changes" : "Create Campus"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
