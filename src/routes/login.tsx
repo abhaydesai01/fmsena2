@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { ShieldCheck, Calculator, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
@@ -17,20 +18,46 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+type Portal = "admin" | "accountant";
+
 function LoginPage() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const [portal, setPortal] = useState<Portal | null>(null);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
 
+  const expectedRole = portal === "admin" ? "admin" : "cashier";
+  const portalLabel = portal === "admin" ? "Admin" : "Accountant";
+
+  const verifyRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("role", expectedRole)
+      .maybeSingle();
+    return !!data;
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const { error } = await signIn(email, password);
+    if (error) {
+      setLoading(false);
+      return toast.error(error);
+    }
+    const ok = await verifyRole();
     setLoading(false);
-    if (error) return toast.error(error);
+    if (!ok) {
+      await supabase.auth.signOut();
+      return toast.error(`This account is not a ${portalLabel}. Use the correct portal.`);
+    }
     toast.success("Signed in");
     navigate({ to: "/dashboard" });
   };
@@ -44,17 +71,73 @@ function LoginPage() {
     toast.success("Account created — you can now sign in.");
   };
 
+  if (!portal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader className="space-y-2 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--gradient-primary)] text-primary-foreground font-bold text-xl">
+              E
+            </div>
+            <CardTitle className="text-2xl">ENA Fees Management</CardTitle>
+            <CardDescription>Excellent NEET Academy · Dharwad</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-sm text-muted-foreground mb-4">
+              Choose your portal to continue
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setPortal("admin")}
+                className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-6 text-card-foreground shadow-sm transition hover:border-primary hover:shadow-md"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div className="font-semibold">Admin Login</div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Manage campuses, courses, fee structures &amp; students
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPortal("accountant")}
+                className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-6 text-card-foreground shadow-sm transition hover:border-primary hover:shadow-md"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition">
+                  <Calculator className="h-6 w-6" />
+                </div>
+                <div className="font-semibold">Accountant Login</div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Collect fees, clear dues &amp; manage installments
+                </p>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--gradient-primary)] text-primary-foreground font-bold text-xl">
-            E
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--gradient-primary)] text-primary-foreground">
+            {portal === "admin" ? <ShieldCheck className="h-6 w-6" /> : <Calculator className="h-6 w-6" />}
           </div>
-          <CardTitle className="text-2xl">ENA Fees Management</CardTitle>
-          <CardDescription>Excellent NEET Academy · Dharwad</CardDescription>
+          <CardTitle className="text-2xl">{portalLabel} Portal</CardTitle>
+          <CardDescription>ENA Fees Management · Dharwad</CardDescription>
         </CardHeader>
         <CardContent>
+          <button
+            type="button"
+            onClick={() => { setPortal(null); setEmail(""); setPassword(""); setFullName(""); }}
+            className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3 w-3" /> Choose different portal
+          </button>
           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign in</TabsTrigger>
@@ -71,7 +154,7 @@ function LoginPage() {
                   <Input id="si-pass" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Signing in…" : "Sign in"}
+                  {loading ? "Signing in…" : `Sign in as ${portalLabel}`}
                 </Button>
               </form>
             </TabsContent>
