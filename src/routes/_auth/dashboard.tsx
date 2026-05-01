@@ -89,18 +89,15 @@ function Dashboard() {
   const batches = useQuery({
     queryKey: ["dash", "batches"],
     queryFn: async () => {
-      const { data } = await supabase.from("batches").select("id, name, capacity, status, courses(name)");
-      const all = data || [];
-      const counts = await Promise.all(
-        all.map(async (b) => {
-          const { count } = await supabase
-            .from("students")
-            .select("*", { count: "exact", head: true })
-            .eq("batch_id", b.id);
-          return { ...b, enrolled: count ?? 0 };
-        })
-      );
-      return counts;
+      const [{ data: batchData }, { data: studentRows }] = await Promise.all([
+        supabase.from("batches").select("id, name, capacity, status, courses(name)"),
+        supabase.from("students").select("batch_id"),
+      ]);
+      const counts: Record<string, number> = {};
+      for (const s of studentRows || []) {
+        if (s.batch_id) counts[s.batch_id] = (counts[s.batch_id] || 0) + 1;
+      }
+      return (batchData || []).map((b: any) => ({ ...b, enrolled: counts[b.id] ?? 0 }));
     },
   });
 
@@ -126,7 +123,7 @@ function Dashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Receipts</CardTitle>
-            <Link to="/reports"><Button variant="ghost" size="sm">View all</Button></Link>
+            <Button asChild variant="ghost" size="sm"><Link to="/reports">View all</Link></Button>
           </CardHeader>
           <CardContent>
             {recent.data?.length ? (
@@ -159,11 +156,11 @@ function Dashboard() {
           <CardHeader><CardTitle>Quick Actions</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {isAdmin && (
-              <Link to="/enroll"><Button variant="default" className="w-full justify-start"><UserPlus className="h-4 w-4" /> Enrol Student</Button></Link>
+              <Button asChild variant="default" className="w-full justify-start"><Link to="/enroll"><UserPlus className="h-4 w-4" /> Enrol Student</Link></Button>
             )}
-            <Link to="/collect"><Button variant="default" className="w-full justify-start"><Receipt className="h-4 w-4" /> Collect Fee</Button></Link>
-            <Link to="/students"><Button variant="outline" className="w-full justify-start"><Search className="h-4 w-4" /> Search Student</Button></Link>
-            <Link to="/defaulters"><Button variant="outline" className="w-full justify-start"><AlertTriangle className="h-4 w-4" /> View Defaulters</Button></Link>
+            <Button asChild variant="default" className="w-full justify-start"><Link to="/collect"><Receipt className="h-4 w-4" /> Collect Fee</Link></Button>
+            <Button asChild variant="outline" className="w-full justify-start"><Link to="/students"><Search className="h-4 w-4" /> Search Student</Link></Button>
+            <Button asChild variant="outline" className="w-full justify-start"><Link to="/defaulters"><AlertTriangle className="h-4 w-4" /> View Defaulters</Link></Button>
           </CardContent>
         </Card>
       </div>
