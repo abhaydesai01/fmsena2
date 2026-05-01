@@ -568,3 +568,64 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
     <div className="flex justify-between gap-4 py-0.5"><span className="text-muted-foreground">{k}</span><span className="font-medium">{v}</span></div>
   );
 }
+
+function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone }: { open: boolean; onClose: () => void; student: Student; feeAssignment: FA; onDone: () => void }) {
+  const { fullName, role, user } = useAuth();
+  const original = Number(feeAssignment.discount_amount || 0);
+  const [amount, setAmount] = useState(original);
+  const [reason, setReason] = useState("Overdue payment");
+
+  useMemo(() => { setAmount(original); }, [feeAssignment.id, original]);
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const cancel = Math.min(Math.max(0, Number(amount)), original);
+      const newDiscount = original - cancel;
+      const newNet = Number(feeAssignment.gross_fee) - newDiscount;
+      const { error: faErr } = await supabase.from("fee_assignments").update({
+        discount_amount: newDiscount,
+        net_payable: newNet,
+        concession_cancelled_amount: Number(feeAssignment.concession_cancelled_amount || 0) + cancel,
+      }).eq("id", feeAssignment.id);
+      if (faErr) throw faErr;
+      const { data: ins } = await supabase.from("installments").select("*").eq("fee_assignment_id", feeAssignment.id).order("installment_no");
+      const nextUnpaid = (ins || []).find((i: any) => Number(i.amount) - Number(i.amount_paid) > 0);
+      if (nextUnpaid) {
+        await supabase.from("installments").update({ amount: Number(nextUnpaid.amount) + cancel }).eq("id", nextUnpaid.id);
+      }
+      const { error: ccErr } = await supabase.from("concession_cancellations").insert({
+        student_id: student.id,
+        fee_assignment_id: feeAssignment.id,
+        original_discount: original,
+        cancelled_amount: cancel,
+        new_net_payable: newNet,
+        reason: reason || null,
+        performed_by: user?.id ?? null,
+        performed_by_name: fullName,
+      });
+      if (ccErr) throw ccErr;
+      await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
+    },
+    onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
+    onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancel Concession</DialogTitle>
+          <DialogDescription>Original concession {inr(original)}. Cancelled amount is added back to the next unpaid instalment.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="mb-1 block text-xs">Amount to cancel (₹) *</Label><Input type="number" min={0} max={original} value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></div>
+          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || amount <= 0}>{submit.isPending ? "Saving…" : "Confirm"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
