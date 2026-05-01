@@ -39,6 +39,9 @@ function Page() {
   const [upgradePlanOpen, setUpgradePlanOpen] = useState(false);
   const [editInstId, setEditInstId] = useState<string | null>(null);
   const [editAmt, setEditAmt] = useState<number>(0);
+  const [profileEdit, setProfileEdit] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<Record<string, any>>({});
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const student = useQuery({
     queryKey: ["student", studentId],
@@ -264,24 +267,138 @@ function Page() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Profile</CardTitle>
+          {isAdmin && !profileEdit && (
+            <Button size="sm" variant="outline" onClick={() => {
+              setProfileDraft({
+                full_name: s.full_name ?? "",
+                mobile: s.mobile ?? "",
+                email: s.email ?? "",
+                aadhaar_number: s.aadhaar_number ?? "",
+                date_of_birth: s.date_of_birth ?? "",
+                gender: s.gender ?? "",
+                permanent_address: s.permanent_address ?? "",
+                current_address: s.current_address ?? "",
+                father_name: s.father_name ?? "",
+                father_mobile: s.father_mobile ?? "",
+                father_occupation: s.father_occupation ?? "",
+                mother_name: s.mother_name ?? "",
+                mother_mobile: s.mother_mobile ?? "",
+                emergency_name: s.emergency_name ?? "",
+                emergency_relation: s.emergency_relation ?? "",
+                emergency_mobile: s.emergency_mobile ?? "",
+                blood_group: (s as any).blood_group ?? "",
+                category: (s as any).category ?? "",
+                religion: (s as any).religion ?? "",
+                previous_school: s.previous_school ?? "",
+                previous_class: (s as any).previous_class ?? "",
+                board: s.board ?? "",
+                marks_10th: s.marks_10th ?? "",
+                marks_12th: s.marks_12th ?? "",
+              });
+              setProfileEdit(true);
+            }}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          )}
+          {isAdmin && profileEdit && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" disabled={profileSaving} onClick={() => { setProfileEdit(false); setProfileDraft({}); }}>
+                <X className="h-3.5 w-3.5" /> Cancel
+              </Button>
+              <Button size="sm" disabled={profileSaving} onClick={async () => {
+                // Mobile validation
+                if (!profileDraft.full_name?.trim()) { toast.error("Full name is required"); return; }
+                if (!profileDraft.mobile?.trim() || !/^\d{10}$/.test(profileDraft.mobile.trim())) { toast.error("Mobile must be 10 digits"); return; }
+                if (profileDraft.father_mobile && !/^\d{10}$/.test(profileDraft.father_mobile.trim())) { toast.error("Father mobile must be 10 digits"); return; }
+                if (!profileDraft.permanent_address?.trim()) { toast.error("Permanent address is required"); return; }
+
+                // Build diff
+                const diff: Record<string, { from: any; to: any }> = {};
+                const updates: Record<string, any> = {};
+                for (const [k, v] of Object.entries(profileDraft)) {
+                  const orig = (s as any)[k];
+                  const cleaned = typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v;
+                  if ((orig ?? null) !== (cleaned ?? null)) {
+                    diff[k] = { from: orig ?? null, to: cleaned ?? null };
+                    updates[k] = cleaned;
+                  }
+                }
+                if (Object.keys(updates).length === 0) {
+                  toast.info("No changes to save");
+                  setProfileEdit(false);
+                  return;
+                }
+                setProfileSaving(true);
+                const { error } = await supabase.from("students").update(updates as any).eq("id", studentId);
+                if (error) { setProfileSaving(false); toast.error(error.message); return; }
+                await logAudit({
+                  actorName: fullName, actorRole: role,
+                  action: "edit_student_profile", entityType: "student", entityId: studentId,
+                  oldValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.from])),
+                  newValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.to])),
+                });
+                setProfileSaving(false);
+                setProfileEdit(false);
+                setProfileDraft({});
+                toast.success("Profile updated");
+                qc.invalidateQueries({ queryKey: ["student", studentId] });
+              }}>
+                <Save className="h-3.5 w-3.5" /> {profileSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          )}
+        </CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
-          <Info k="DOB" v={fmtDate(s.date_of_birth)} />
-          <Info k="Gender" v={s.gender} />
-          <Info k="Mobile" v={s.mobile} />
-          <Info k="Email" v={s.email || "—"} />
-          <Info k="Aadhaar" v={s.aadhaar_number || "—"} />
-          <Info k="Class" v={s.class_year} />
-          <Info k="Permanent Address" v={s.permanent_address} />
-          <Info k="Father" v={`${s.father_name} · ${s.father_mobile}`} />
-          <Info k="Mother" v={s.mother_name ? `${s.mother_name} · ${s.mother_mobile || "—"}` : "—"} />
-          <Info k="Emergency" v={s.emergency_name ? `${s.emergency_name} (${s.emergency_relation || "—"}) · ${s.emergency_mobile || "—"}` : "—"} />
-          <Info k="Blood Group" v={(s as any).blood_group || "—"} />
-          <Info k="Category / Religion" v={`${(s as any).category || "—"} · ${(s as any).religion || "—"}`} />
-          <Info k="Previous School" v={s.previous_school || "—"} />
-          <Info k="Previous Class" v={(s as any).previous_class || "—"} />
-          <Info k="Admission Date" v={fmtDate(s.admission_date)} />
-          <Info k="Academic Year" v={s.academic_year} />
+          {profileEdit ? (
+            <>
+              <EditField k="Full Name *" v={profileDraft.full_name} onChange={(x) => setProfileDraft((p) => ({ ...p, full_name: x }))} />
+              <EditField k="Mobile *" v={profileDraft.mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, mobile: x }))} />
+              <EditField k="Email" v={profileDraft.email} onChange={(x) => setProfileDraft((p) => ({ ...p, email: x }))} />
+              <EditField k="Aadhaar" v={profileDraft.aadhaar_number} onChange={(x) => setProfileDraft((p) => ({ ...p, aadhaar_number: x }))} />
+              <EditField k="DOB" type="date" v={profileDraft.date_of_birth} onChange={(x) => setProfileDraft((p) => ({ ...p, date_of_birth: x }))} />
+              <EditSelect k="Gender" v={profileDraft.gender} options={["male", "female", "other"]} onChange={(x) => setProfileDraft((p) => ({ ...p, gender: x }))} />
+              <EditField k="Blood Group" v={profileDraft.blood_group} onChange={(x) => setProfileDraft((p) => ({ ...p, blood_group: x }))} />
+              <EditField k="Category" v={profileDraft.category} onChange={(x) => setProfileDraft((p) => ({ ...p, category: x }))} />
+              <EditField k="Religion" v={profileDraft.religion} onChange={(x) => setProfileDraft((p) => ({ ...p, religion: x }))} />
+              <EditTextarea k="Permanent Address *" v={profileDraft.permanent_address} onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address: x }))} />
+              <EditTextarea k="Current Address" v={profileDraft.current_address} onChange={(x) => setProfileDraft((p) => ({ ...p, current_address: x }))} />
+              <EditField k="Father Name *" v={profileDraft.father_name} onChange={(x) => setProfileDraft((p) => ({ ...p, father_name: x }))} />
+              <EditField k="Father Mobile *" v={profileDraft.father_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, father_mobile: x }))} />
+              <EditField k="Father Occupation" v={profileDraft.father_occupation} onChange={(x) => setProfileDraft((p) => ({ ...p, father_occupation: x }))} />
+              <EditField k="Mother Name" v={profileDraft.mother_name} onChange={(x) => setProfileDraft((p) => ({ ...p, mother_name: x }))} />
+              <EditField k="Mother Mobile" v={profileDraft.mother_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, mother_mobile: x }))} />
+              <EditField k="Emergency Name" v={profileDraft.emergency_name} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_name: x }))} />
+              <EditField k="Emergency Relation" v={profileDraft.emergency_relation} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_relation: x }))} />
+              <EditField k="Emergency Mobile" v={profileDraft.emergency_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_mobile: x }))} />
+              <EditField k="Previous School" v={profileDraft.previous_school} onChange={(x) => setProfileDraft((p) => ({ ...p, previous_school: x }))} />
+              <EditField k="Previous Class" v={profileDraft.previous_class} onChange={(x) => setProfileDraft((p) => ({ ...p, previous_class: x }))} />
+              <EditField k="Board" v={profileDraft.board} onChange={(x) => setProfileDraft((p) => ({ ...p, board: x }))} />
+              <EditField k="Marks 10th" v={profileDraft.marks_10th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_10th: x }))} />
+              <EditField k="Marks 12th" v={profileDraft.marks_12th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_12th: x }))} />
+            </>
+          ) : (
+            <>
+              <Info k="DOB" v={fmtDate(s.date_of_birth)} />
+              <Info k="Gender" v={s.gender} />
+              <Info k="Mobile" v={s.mobile} />
+              <Info k="Email" v={s.email || "—"} />
+              <Info k="Aadhaar" v={s.aadhaar_number || "—"} />
+              <Info k="Class" v={s.class_year} />
+              <Info k="Permanent Address" v={s.permanent_address} />
+              <Info k="Current Address" v={s.current_address || "—"} />
+              <Info k="Father" v={`${s.father_name} · ${s.father_mobile}`} />
+              <Info k="Mother" v={s.mother_name ? `${s.mother_name} · ${s.mother_mobile || "—"}` : "—"} />
+              <Info k="Emergency" v={s.emergency_name ? `${s.emergency_name} (${s.emergency_relation || "—"}) · ${s.emergency_mobile || "—"}` : "—"} />
+              <Info k="Blood Group" v={(s as any).blood_group || "—"} />
+              <Info k="Category / Religion" v={`${(s as any).category || "—"} · ${(s as any).religion || "—"}`} />
+              <Info k="Previous School" v={s.previous_school || "—"} />
+              <Info k="Previous Class" v={(s as any).previous_class || "—"} />
+              <Info k="Admission Date" v={fmtDate(s.admission_date)} />
+              <Info k="Academic Year" v={s.academic_year} />
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -516,6 +633,36 @@ function Info({ k, v }: { k: string; v: string }) {
     <div className="rounded-md border border-border p-2">
       <div className="text-xs text-muted-foreground">{k}</div>
       <div className="text-sm font-medium">{v}</div>
+    </div>
+  );
+}
+
+function EditField({ k, v, onChange, type = "text" }: { k: string; v: any; onChange: (x: string) => void; type?: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Input className="h-8" type={type} value={v ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function EditTextarea({ k, v, onChange }: { k: string; v: any; onChange: (x: string) => void }) {
+  return (
+    <div className="rounded-md border border-border p-2 md:col-span-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Textarea rows={2} value={v ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function EditSelect({ k, v, options, onChange }: { k: string; v: any; options: string[]; onChange: (x: string) => void }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
+      <Select value={v || ""} onValueChange={onChange}>
+        <SelectTrigger className="h-8"><SelectValue placeholder="Select…" /></SelectTrigger>
+        <SelectContent>{options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+      </Select>
     </div>
   );
 }
