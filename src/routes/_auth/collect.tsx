@@ -359,6 +359,21 @@ function Page() {
               <Stat label="Outstanding" value={inr(totals.due)} accent="destructive" />
             </div>
 
+            {feeAssignment.data && Number(feeAssignment.data.discount_amount) > 0 && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+                <div>
+                  <div className="font-medium">Concession active · {inr(Number(feeAssignment.data.discount_amount))}</div>
+                  <div className="text-xs text-muted-foreground">Cancel the concession to add the amount back to the next unpaid instalment.</div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setCancelConcessionOpen(true)}>Cancel concession</Button>
+              </div>
+            )}
+            {feeAssignment.data && Number(feeAssignment.data.concession_cancelled_amount) > 0 && (
+              <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                Concession cancelled previously · {inr(Number(feeAssignment.data.concession_cancelled_amount))}
+              </div>
+            )}
+
             {installments.isLoading ? (
               <Loading />
             ) : (
