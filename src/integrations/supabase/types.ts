@@ -136,6 +136,45 @@ export type Database = {
         }
         Relationships: []
       }
+      concession_cancellations: {
+        Row: {
+          cancelled_amount: number
+          created_at: string
+          fee_assignment_id: string
+          id: string
+          new_net_payable: number
+          original_discount: number
+          performed_by: string | null
+          performed_by_name: string | null
+          reason: string | null
+          student_id: string
+        }
+        Insert: {
+          cancelled_amount: number
+          created_at?: string
+          fee_assignment_id: string
+          id?: string
+          new_net_payable: number
+          original_discount: number
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id: string
+        }
+        Update: {
+          cancelled_amount?: number
+          created_at?: string
+          fee_assignment_id?: string
+          id?: string
+          new_net_payable?: number
+          original_discount?: number
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id?: string
+        }
+        Relationships: []
+      }
       courses: {
         Row: {
           academic_year: string
@@ -183,6 +222,7 @@ export type Database = {
       }
       fee_assignments: {
         Row: {
+          concession_cancelled_amount: number
           confirmed: boolean
           course_id: string
           created_at: string
@@ -196,12 +236,15 @@ export type Database = {
           installment_count: number
           material_fee: number
           net_payable: number
+          original_discount_amount: number
+          plan_kind: string
           registration_fee: number
           student_id: string
           transport_fee_monthly: number
           updated_at: string
         }
         Insert: {
+          concession_cancelled_amount?: number
           confirmed?: boolean
           course_id: string
           created_at?: string
@@ -215,12 +258,15 @@ export type Database = {
           installment_count: number
           material_fee?: number
           net_payable: number
+          original_discount_amount?: number
+          plan_kind?: string
           registration_fee?: number
           student_id: string
           transport_fee_monthly?: number
           updated_at?: string
         }
         Update: {
+          concession_cancelled_amount?: number
           confirmed?: boolean
           course_id?: string
           created_at?: string
@@ -234,6 +280,8 @@ export type Database = {
           installment_count?: number
           material_fee?: number
           net_payable?: number
+          original_discount_amount?: number
+          plan_kind?: string
           registration_fee?: number
           student_id?: string
           transport_fee_monthly?: number
@@ -267,6 +315,7 @@ export type Database = {
           installment_no: number
           is_registration: boolean
           late_fee: number
+          month_label: string | null
           status: Database["public"]["Enums"]["installment_status"]
           student_id: string
           updated_at: string
@@ -281,6 +330,7 @@ export type Database = {
           installment_no: number
           is_registration?: boolean
           late_fee?: number
+          month_label?: string | null
           status?: Database["public"]["Enums"]["installment_status"]
           student_id: string
           updated_at?: string
@@ -295,6 +345,7 @@ export type Database = {
           installment_no?: number
           is_registration?: boolean
           late_fee?: number
+          month_label?: string | null
           status?: Database["public"]["Enums"]["installment_status"]
           student_id?: string
           updated_at?: string
@@ -402,6 +453,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plan_upgrades: {
+        Row: {
+          created_at: string
+          fee_assignment_id: string
+          from_plan: string
+          id: string
+          performed_by: string | null
+          performed_by_name: string | null
+          reason: string | null
+          student_id: string
+          to_plan: string
+        }
+        Insert: {
+          created_at?: string
+          fee_assignment_id: string
+          from_plan: string
+          id?: string
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id: string
+          to_plan: string
+        }
+        Update: {
+          created_at?: string
+          fee_assignment_id?: string
+          from_plan?: string
+          id?: string
+          performed_by?: string | null
+          performed_by_name?: string | null
+          reason?: string | null
+          student_id?: string
+          to_plan?: string
+        }
+        Relationships: []
       }
       refunds: {
         Row: {
