@@ -1,0 +1,2 @@
+CREATE POLICY "accountant update fee_assignments" ON public.fee_assignments FOR UPDATE TO authenticated USING (has_role(auth.uid(), 'cashier'::app_role)) WITH CHECK (has_role(auth.uid(), 'cashier'::app_role));
+CREATE POLICY "accountant insert concession_cancellations" ON public.concession_cancellations FOR INSERT TO authenticated WITH CHECK (has_role(auth.uid(), 'cashier'::app_role));
