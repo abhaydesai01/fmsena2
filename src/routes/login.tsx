@@ -93,7 +93,7 @@ function LoginPage() {
                   {loading ? "Creating…" : "Create account"}
                 </Button>
                 <p className="text-xs text-muted-foreground text-center">
-                  The first registered user becomes Admin. Subsequent users are Cashiers.
+                  The first registered user becomes Admin. Subsequent users are Accountants.
                 </p>
               </form>
             </TabsContent>
