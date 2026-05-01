@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { BarChart3, IndianRupee, Receipt, AlertCircle, Download } from "lucide-react";
+import { BarChart3, IndianRupee, Receipt, AlertCircle, Download, Calendar } from "lucide-react";
 import { inr, fmtDate, modeLabel, exportCSV } from "@/lib/format";
 
 export const Route = createFileRoute("/_auth/reports")({ component: Page });
@@ -50,12 +50,116 @@ function Page() {
         <TabsList>
           <TabsTrigger value="collections"><Receipt className="h-4 w-4" /> Collections</TabsTrigger>
           <TabsTrigger value="outstanding"><AlertCircle className="h-4 w-4" /> Outstanding</TabsTrigger>
+          <TabsTrigger value="monthly"><Calendar className="h-4 w-4" /> Monthly Dues</TabsTrigger>
           <TabsTrigger value="batches"><BarChart3 className="h-4 w-4" /> By Course</TabsTrigger>
         </TabsList>
         <TabsContent value="collections" className="mt-4"><CollectionsReport from={from} to={to} /></TabsContent>
         <TabsContent value="outstanding" className="mt-4"><OutstandingReport /></TabsContent>
+        <TabsContent value="monthly" className="mt-4"><MonthlyDuesReport /></TabsContent>
         <TabsContent value="batches" className="mt-4"><CourseReport /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function MonthlyDuesReport() {
+  const now = new Date();
+  const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "due" | "overdue" | "partial">("all");
+
+  const q = useQuery({
+    queryKey: ["report", "monthly-dues", month, statusFilter],
+    queryFn: async () => {
+      const [y, m] = month.split("-").map(Number);
+      const start = `${y}-${String(m).padStart(2, "0")}-01`;
+      const endDate = new Date(y, m, 0); // last day of month
+      const end = endDate.toISOString().slice(0, 10);
+      let query = supabase
+        .from("installments")
+        .select("id, installment_no, month_label, due_date, amount, amount_paid, status, students(id, full_name, admission_number, mobile, courses(name), batches(name))")
+        .gte("due_date", start).lte("due_date", end)
+        .order("due_date");
+      if (statusFilter !== "all") query = query.eq("status", statusFilter as any);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const totals = useMemo(() => {
+    const list = (q.data || []) as any[];
+    const billed = list.reduce((s, i) => s + Number(i.amount), 0);
+    const collected = list.reduce((s, i) => s + Number(i.amount_paid), 0);
+    return { billed, collected, due: billed - collected, count: list.length };
+  }, [q.data]);
+
+  return (
+    <div>
+      <Card className="mb-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-3">
+          <div>
+            <Label className="mb-1 block text-xs">Due Month</Label>
+            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Status</Label>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm">
+              <option value="all">All</option>
+              <option value="paid">Paid</option>
+              <option value="partial">Partial</option>
+              <option value="due">Due</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+        <StatCard label="Instalments" value={totals.count} icon={Calendar} tone="info" />
+        <StatCard label="Billed" value={inr(totals.billed)} icon={IndianRupee} tone="default" />
+        <StatCard label="Outstanding" value={inr(totals.due)} icon={AlertCircle} tone="destructive" />
+      </div>
+
+      {q.isLoading ? <Loading /> : (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Instalments due in {month}</CardTitle>
+            <Button variant="outline" size="sm" disabled={!q.data?.length}
+              onClick={() => exportCSV(`monthly_dues_${month}.csv`, (q.data as any[]).map((i) => ({
+                admission_number: i.students?.admission_number, student: i.students?.full_name, mobile: i.students?.mobile,
+                course: i.students?.courses?.name, batch: i.students?.batches?.name,
+                installment_no: i.installment_no, month: i.month_label, due_date: i.due_date,
+                amount: i.amount, paid: i.amount_paid, outstanding: Number(i.amount) - Number(i.amount_paid), status: i.status,
+              })))}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Admission</TableHead><TableHead>Student</TableHead><TableHead>Course / Batch</TableHead>
+                <TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Outstanding</TableHead><TableHead>Status</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {(q.data as any[]).map((i) => (
+                  <TableRow key={i.id}>
+                    <TableCell className="font-mono text-xs">{i.students?.admission_number}</TableCell>
+                    <TableCell>{i.students?.full_name}<div className="text-xs text-muted-foreground">{i.students?.mobile}</div></TableCell>
+                    <TableCell className="text-sm">{i.students?.courses?.name}<div className="text-xs text-muted-foreground">{i.students?.batches?.name}</div></TableCell>
+                    <TableCell className="text-sm">{fmtDate(i.due_date)}</TableCell>
+                    <TableCell className="text-right">{inr(i.amount)}</TableCell>
+                    <TableCell className="text-right text-success">{inr(i.amount_paid)}</TableCell>
+                    <TableCell className="text-right font-semibold text-destructive">{inr(Number(i.amount) - Number(i.amount_paid))}</TableCell>
+                    <TableCell><StatusBadge status={i.status} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
