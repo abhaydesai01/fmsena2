@@ -486,7 +486,7 @@ function Page() {
         <CardHeader><CardTitle>Installments</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Month</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead>{isAdmin && <TableHead></TableHead>}</TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Month</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
             <TableBody>
               {installments.data?.map((i: any) => (
                 <TableRow key={i.id}>
@@ -501,8 +501,7 @@ function Page() {
                   </TableCell>
                   <TableCell className="text-right">{inr(i.amount_paid)}</TableCell>
                   <TableCell><StatusBadge status={i.status} /></TableCell>
-                  {isAdmin && (
-                    <TableCell className="text-right">
+                  <TableCell className="text-right">
                       {editInstId === i.id ? (
                         <div className="flex justify-end gap-1">
                           <Button size="sm" variant="ghost" onClick={async () => {
@@ -521,8 +520,7 @@ function Page() {
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       ) : null}
-                    </TableCell>
-                  )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
