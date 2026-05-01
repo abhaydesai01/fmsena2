@@ -32,6 +32,10 @@ type Inst = {
   id: string; installment_no: number; due_date: string; amount: number;
   amount_paid: number; status: string; late_fee: number;
 };
+type FA = {
+  id: string; gross_fee: number; discount_amount: number; net_payable: number;
+  concession_cancelled_amount: number;
+};
 type Student = {
   id: string; admission_number: string; full_name: string; mobile: string;
   courses?: { name: string } | null; batches?: { name: string } | null;
@@ -55,6 +59,7 @@ function Page() {
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
   const [studentStatusFilter, setStudentStatusFilter] = useState<"all" | "active" | "discontinued" | "completed">("active");
+  const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
 
   const courses = useQuery({
     queryKey: ["collect", "courses"],
@@ -140,6 +145,21 @@ function Page() {
         .eq("student_id", selected!.id)
         .order("installment_no");
       return (data || []) as Inst[];
+    },
+  });
+
+  const feeAssignment = useQuery({
+    queryKey: ["collect", "fee_assignment", selected?.id],
+    enabled: !!selected,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("fee_assignments")
+        .select("id, gross_fee, discount_amount, net_payable, concession_cancelled_amount")
+        .eq("student_id", selected!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data as FA | null;
     },
   });
 
@@ -405,6 +425,19 @@ function Page() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {selected && feeAssignment.data && (
+        <CancelConcessionDialog
+          open={cancelConcessionOpen}
+          onClose={() => setCancelConcessionOpen(false)}
+          student={selected}
+          feeAssignment={feeAssignment.data}
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["collect", "installments"] });
+            qc.invalidateQueries({ queryKey: ["collect", "fee_assignment"] });
+          }}
+        />
+      )}
     </div>
   );
 }
