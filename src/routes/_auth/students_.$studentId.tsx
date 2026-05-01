@@ -48,7 +48,7 @@ function Page() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("students")
-        .select("*, courses(name, gross_fee), batches(id, name, timing), campuses(name)")
+        .select("*, courses(name, gross_fee), batches(id, name, timing)")
         .eq("id", studentId)
         .maybeSingle();
       if (error) throw error;
@@ -205,7 +205,7 @@ function Page() {
 
       <PageHeader
         title={s.full_name}
-        description={`${s.admission_number} · ${s.courses?.name || "—"} · ${s.batches?.name || "—"} · ${(s as any).campuses?.name || "—"}`}
+        description={`${s.admission_number} · ${s.courses?.name || "—"} · ${s.batches?.name || "—"}`}
         actions={isAdmin ? (
           <>
             <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>
