@@ -437,32 +437,28 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
               <div className="mt-1 text-xs text-muted-foreground">{selectedCourse?.name} · {selectedCourse?.duration_months} months</div>
             </div>
 
-            <Field label="Discount Type">
-              <Select value={fee.discount_type} onValueChange={(v: DiscountType) => setFee({ ...fee, discount_type: v })}>
+            <Field label="Instalment Plan *">
+              <Select value={fee.plan} onValueChange={(v: PlanKind) => setFee({ ...fee, plan: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="round_off">Round-Off (3 inst.)</SelectItem>
-                  <SelectItem value="slab_10">Slab 10% (3 inst.)</SelectItem>
-                  <SelectItem value="slab_15">Slab 15% (3 inst.)</SelectItem>
-                  <SelectItem value="slab_20">Slab 20% (3 inst.)</SelectItem>
-                  <SelectItem value="special">Special (4 inst.)</SelectItem>
+                  <SelectItem value="plan_3">{PLAN_LABEL.plan_3} · Jun / Aug / Oct</SelectItem>
+                  <SelectItem value="plan_4">{PLAN_LABEL.plan_4} · Jun / Aug / Oct / Nov</SelectItem>
+                  <SelectItem value="plan_5">{PLAN_LABEL.plan_5} · Jun / Aug / Oct / Nov / Dec</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-
-            {fee.discount_type === "round_off" && (
-              <Field label="Rounded Net Payable">
-                <Input type="number" value={fee.rounded_amount || grossFee} onChange={(e) => setFee({ ...fee, rounded_amount: Number(e.target.value) })} />
-              </Field>
-            )}
-            {fee.discount_type === "special" && (
-              <Field label="Special Discount Amount">
-                <Input type="number" value={fee.special_amount} onChange={(e) => setFee({ ...fee, special_amount: Number(e.target.value) })} />
-              </Field>
-            )}
-
-            <Field label="Discount Reason" className="md:col-span-2">
-              <Input value={fee.discount_reason} onChange={(e) => setFee({ ...fee, discount_reason: e.target.value })} placeholder="Sibling, scholarship, board topper…" />
+            <Field label="Concession (₹)">
+              <Input type="number" min={0} value={fee.concession_amount}
+                onChange={(e) => setFee({ ...fee, concession_amount: Number(e.target.value) })} />
+            </Field>
+            <Field label="Plan Year">
+              <Input type="number" value={fee.plan_year} onChange={(e) => setFee({ ...fee, plan_year: Number(e.target.value) })} />
+            </Field>
+            <Field label="Due day of month">
+              <Input type="number" min={1} max={28} value={fee.due_day} onChange={(e) => setFee({ ...fee, due_day: Number(e.target.value) })} />
+            </Field>
+            <Field label="Concession Reason" className="md:col-span-2">
+              <Input value={fee.concession_reason} onChange={(e) => setFee({ ...fee, concession_reason: e.target.value })} placeholder="Sibling, scholarship, board topper…" />
             </Field>
 
             {profile.transport_required && (
@@ -477,25 +473,43 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
             )}
 
             <div className="grid grid-cols-3 gap-3 md:col-span-2">
-              <Stat label="Discount" value={inr(calc.discountAmount)} />
-              <Stat label="Net Payable" value={inr(calc.netPayable)} accent />
-              <Stat label="Installments" value={String(calc.installmentCount)} />
+              <Stat label="Concession" value={inr(Number(fee.concession_amount || 0))} />
+              <Stat label="Net Payable" value={inr(netPayable)} accent />
+              <Stat label="Installments" value={String(planMonths.length)} />
             </div>
 
             <div className="md:col-span-2">
-              <div className="mb-2 text-sm font-semibold">Installment Schedule</div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-semibold">Instalment Schedule (amounts editable)</div>
+                <Button type="button" variant="outline" size="sm"
+                  onClick={() => setInstAmounts(evenSplit(netPayable, planMonths.length))}>
+                  Auto-split evenly
+                </Button>
+              </div>
               <Table>
-                <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Due Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Month</TableHead><TableHead>Due Date</TableHead><TableHead className="text-right">Amount (₹)</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {installments.map((i) => (
-                    <TableRow key={i.no}>
-                      <TableCell>{i.no}</TableCell>
-                      <TableCell>{i.due.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
-                      <TableCell className="text-right font-semibold">{inr(i.amount)}</TableCell>
+                  {planMonths.map((m, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{idx + 1}</TableCell>
+                      <TableCell>{m.label}</TableCell>
+                      <TableCell>{dueDates[idx]?.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
+                      <TableCell className="text-right">
+                        <Input type="number" className="ml-auto h-8 w-32 text-right"
+                          value={instAmounts[idx] ?? 0}
+                          onChange={(e) => {
+                            const next = [...instAmounts];
+                            next[idx] = Number(e.target.value);
+                            setInstAmounts(next);
+                          }} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              <div className={`mt-2 text-xs ${amountMismatch ? "text-destructive" : "text-muted-foreground"}`}>
+                Sum of instalments: <strong>{inr(sumInst)}</strong> {amountMismatch ? `(must equal Net Payable ${inr(netPayable)})` : "✓ matches Net Payable"}
+              </div>
             </div>
 
             <div className="flex justify-between md:col-span-2">
@@ -519,9 +533,10 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
             </Section>
             <Section title="Fees">
               <Row k="Gross" v={inr(grossFee)} />
-              <Row k="Discount" v={`${discountLabel(fee.discount_type)} · ${inr(calc.discountAmount)}`} />
-              <Row k="Net Payable" v={inr(calc.netPayable)} />
-              <Row k="Installments" v={String(calc.installmentCount)} />
+              <Row k="Plan" v={PLAN_LABEL[fee.plan]} />
+              <Row k="Concession" v={inr(Number(fee.concession_amount || 0))} />
+              <Row k="Net Payable" v={inr(netPayable)} />
+              <Row k="Installments" v={String(planMonths.length)} />
             </Section>
 
             <div className="flex justify-between">
