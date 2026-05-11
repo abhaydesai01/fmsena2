@@ -25,6 +25,7 @@ import { Search, Receipt, IndianRupee, CheckCircle2, Filter, X } from "lucide-re
 import { inr, fmtDate, modeLabel } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import logoUrl from "@/assets/logo.png";
 
 export const Route = createFileRoute("/_auth/collect")({ component: Page });
 
@@ -55,7 +56,20 @@ function Page() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Student | null>(null);
   const [payInst, setPayInst] = useState<Inst | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<{ no: string; student: string; amount: number } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<{
+    no: string;
+    student: string;
+    admissionNumber: string;
+    course: string;
+    amount: number;
+    mode: string;
+    reference: string;
+    paidAt: string;
+    totalFee: number;
+    totalPaid: number;
+    balance: number;
+    installmentNo: number;
+  } | null>(null);
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
   const [studentStatusFilter, setStudentStatusFilter] = useState<"all" | "active" | "discontinued" | "completed">("active");
@@ -202,11 +216,49 @@ function Page() {
         action: "collect_payment", entityType: "payment", entityId: pay.id,
         newValue: { receipt: rcpt, amount: form.amount, mode: form.payment_mode },
       });
-      return { receipt: rcpt as string, amount: form.amount, student: selected.full_name };
+      const reference =
+        form.payment_mode === "cheque" || form.payment_mode === "dd"
+          ? `${form.cheque_bank || ""} ${form.cheque_number || ""}`.trim()
+          : form.payment_mode === "upi"
+            ? form.upi_reference || ""
+            : form.payment_mode === "card"
+              ? form.card_last4
+                ? `**** ${form.card_last4}`
+                : ""
+              : "";
+      const totalFee = totals.total;
+      const totalPaidAfter = totals.paid + Number(form.amount || 0);
+      return {
+        receipt: rcpt as string,
+        amount: Number(form.amount || 0),
+        student: selected.full_name,
+        admissionNumber: selected.admission_number,
+        course: selected.courses?.name || "",
+        mode: form.payment_mode,
+        reference,
+        paidAt: new Date().toISOString(),
+        totalFee,
+        totalPaid: totalPaidAfter,
+        balance: Math.max(0, totalFee - totalPaidAfter),
+        installmentNo: payInst.installment_no,
+      };
     },
     onSuccess: (r) => {
       toast.success(`Receipt ${r.receipt} generated`);
-      setLastReceipt({ no: r.receipt, student: r.student, amount: r.amount });
+      setLastReceipt({
+        no: r.receipt,
+        student: r.student,
+        admissionNumber: r.admissionNumber,
+        course: r.course,
+        amount: r.amount,
+        mode: r.mode,
+        reference: r.reference,
+        paidAt: r.paidAt,
+        totalFee: r.totalFee,
+        totalPaid: r.totalPaid,
+        balance: r.balance,
+        installmentNo: r.installmentNo,
+      });
       setPayInst(null);
       qc.invalidateQueries({ queryKey: ["collect", "installments"] });
       qc.invalidateQueries({ queryKey: ["dash"] });
