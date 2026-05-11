@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
+import { getSessionFn } from "@/fns/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,8 +12,8 @@ import { ShieldCheck, Calculator, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/dashboard" });
+    const session = await getSessionFn();
+    if (session) throw redirect({ to: "/dashboard" });
   },
   component: LoginPage,
 });
@@ -32,32 +32,12 @@ function LoginPage() {
   const expectedRole = portal === "admin" ? "admin" : "cashier";
   const portalLabel = portal === "admin" ? "Admin" : "Accountant";
 
-  const verifyRole = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", expectedRole)
-      .maybeSingle();
-    return !!data;
-  };
-
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await signIn(email, password);
-    if (error) {
-      setLoading(false);
-      return toast.error(error);
-    }
-    const ok = await verifyRole();
+    const { error } = await signIn(email, password, expectedRole);
     setLoading(false);
-    if (!ok) {
-      await supabase.auth.signOut();
-      return toast.error(`This account is not a ${portalLabel}. Use the correct portal.`);
-    }
+    if (error) return toast.error(error);
     toast.success("Signed in");
     navigate({ to: "/dashboard" });
   };

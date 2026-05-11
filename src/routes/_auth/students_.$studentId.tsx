@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Loading } from "@/components/app/Loading";
 import { StatusBadge } from "@/components/app/StatusBadge";
@@ -20,19 +19,36 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ArrowLeftRight, ArrowUpRight, ChevronLeft, FileText, Upload, History, AlertTriangle, TrendingUp, Pencil, Save, X } from "lucide-react";
+import { ArrowLeftRight, ArrowUpRight, ChevronLeft, FileText, Upload, History, AlertTriangle, TrendingUp, Pencil, Save, X, Receipt } from "lucide-react";
 import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { PLAN_LABEL, PLAN_NEXT, PLAN_MONTHS, evenSplit, type PlanKind } from "@/lib/installments";
+import {
+  getStudentFn,
+  getInstallmentsFn,
+  getFeeAssignmentFn,
+  getPlanUpgradesFn,
+  getConcessionCancelsFn,
+  getPaymentsFn,
+  getDocumentsFn,
+  getTransfersFn,
+  createDocumentFn,
+  updateStudentFn,
+  updateInstallmentAmountFn,
+  createTransferFn,
+  cancelConcessionFn,
+  upgradePlanFn,
+} from "@/fns/students";
+import { getCoursesFn, getBatchesFn } from "@/fns/courses";
 
 export const Route = createFileRoute("/_auth/students_/$studentId")({ component: Page });
 
 function Page() {
   const { studentId } = Route.useParams();
   const { isAdmin, fullName, role, user } = useAuth();
-  const qc = useQueryClient();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [transferOpen, setTransferOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
@@ -45,122 +61,64 @@ function Page() {
 
   const student = useQuery({
     queryKey: ["student", studentId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("students")
-        .select("*, courses(name, gross_fee), batches(id, name, timing)")
-        .eq("id", studentId)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getStudentFn({ data: { id: studentId } }),
   });
 
   const installments = useQuery({
     queryKey: ["student", studentId, "installments"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("installments")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("installment_no");
-      return data || [];
-    },
+    queryFn: () => getInstallmentsFn({ data: { studentId } }),
   });
 
   const feeAssignment = useQuery({
     queryKey: ["student", studentId, "fee-assignment"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("fee_assignments")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return data;
-    },
+    queryFn: () => getFeeAssignmentFn({ data: { studentId } }),
   });
 
   const planUpgrades = useQuery({
     queryKey: ["student", studentId, "plan-upgrades"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("plan_upgrades")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false });
-      return data || [];
-    },
+    queryFn: () => getPlanUpgradesFn({ data: { studentId } }),
   });
 
   const concessionCancels = useQuery({
     queryKey: ["student", studentId, "concession-cancels"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("concession_cancellations")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false });
-      return data || [];
-    },
+    queryFn: () => getConcessionCancelsFn({ data: { studentId } }),
   });
 
   const payments = useQuery({
     queryKey: ["student", studentId, "payments"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("payments")
-        .select("id, receipt_number, payment_date, amount, payment_mode, status")
-        .eq("student_id", studentId)
-        .order("payment_date", { ascending: false });
-      return data || [];
-    },
+    queryFn: () => getPaymentsFn({ data: { studentId } }),
   });
 
   const documents = useQuery({
     queryKey: ["student", studentId, "documents"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("student_documents")
-        .select("*")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false });
-      return data || [];
-    },
+    queryFn: () => getDocumentsFn({ data: { studentId } }),
   });
 
   const transfers = useQuery({
     queryKey: ["student", studentId, "transfers"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("student_transfers")
-        .select("*, from_batch:from_batch_id(name), to_batch:to_batch_id(name)")
-        .eq("student_id", studentId)
-        .order("created_at", { ascending: false });
-      return data || [];
-    },
+    queryFn: () => getTransfersFn({ data: { studentId } }),
   });
 
   const uploadDoc = useMutation({
     mutationFn: async ({ label, file }: { label: string; file: File }) => {
-      const ext = file.name.split(".").pop() || "bin";
-      const path = `${studentId}/${Date.now()}_${label.replace(/\W+/g, "_")}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("student-files").upload(path, file, {
-        contentType: file.type || undefined,
+      // Read file as data URL so we can store it in MongoDB
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
       });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("student-files").getPublicUrl(path);
-      const { error } = await supabase.from("student_documents").insert({
-        student_id: studentId,
-        label,
-        file_url: pub.publicUrl,
-        mime_type: file.type || null,
-        size_bytes: file.size,
-        uploaded_by: user?.id ?? null,
-        uploaded_by_name: fullName,
+      await createDocumentFn({
+        data: {
+          student_id: studentId,
+          label,
+          file_url: dataUrl,
+          mime_type: file.type || null,
+          size_bytes: file.size,
+          uploaded_by: user?.id ?? null,
+          uploaded_by_name: fullName,
+        },
       });
-      if (error) throw error;
       await logAudit({
         actorName: fullName, actorRole: role,
         action: "upload_document", entityType: "student", entityId: studentId,
@@ -177,7 +135,7 @@ function Page() {
   if (student.isLoading) return <Loading />;
   if (!student.data) {
     return (
-      <div>
+      <div className="space-y-4">
         <PageHeader title="Student not found" />
         <Link to="/students" className="text-sm underline">Back to students</Link>
       </div>
@@ -199,9 +157,19 @@ function Page() {
 
   return (
     <div className="space-y-4">
-      <Link to="/students" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ChevronLeft className="h-4 w-4" /> Back to students
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link to="/students" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" /> Back to students
+        </Link>
+        {s.status === "active" && (
+          <Button
+            size="sm"
+            onClick={() => navigate({ to: "/collect", search: { q: s.admission_number } })}
+          >
+            <Receipt className="h-4 w-4" /> Collect Fee
+          </Button>
+        )}
+      </div>
 
       <PageHeader
         title={s.full_name}
@@ -349,8 +317,13 @@ function Page() {
                   return;
                 }
                 setProfileSaving(true);
-                const { error } = await supabase.from("students").update(updates as any).eq("id", studentId);
-                if (error) { setProfileSaving(false); toast.error(error.message); return; }
+                try {
+                  await updateStudentFn({ data: { id: studentId, updates } });
+                } catch (e: any) {
+                  setProfileSaving(false);
+                  toast.error(e?.message || "Failed to save");
+                  return;
+                }
                 await logAudit({
                   actorName: fullName, actorRole: role,
                   action: "edit_student_profile", entityType: "student", entityId: studentId,
@@ -506,8 +479,9 @@ function Page() {
                         <div className="flex justify-end gap-1">
                           <Button size="sm" variant="ghost" onClick={async () => {
                             if (editAmt < Number(i.amount_paid)) { toast.error("Amount cannot be less than already paid"); return; }
-                            const { error } = await supabase.from("installments").update({ amount: editAmt }).eq("id", i.id);
-                            if (error) { toast.error(error.message); return; }
+                            try {
+                              await updateInstallmentAmountFn({ data: { id: i.id, amount: editAmt } });
+                            } catch (e: any) { toast.error(e?.message || "Update failed"); return; }
                             await logAudit({ actorName: fullName, actorRole: role, action: "edit_installment", entityType: "installment", entityId: i.id, oldValue: { amount: i.amount }, newValue: { amount: editAmt } });
                             toast.success("Updated");
                             setEditInstId(null);
@@ -740,13 +714,7 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
     queryKey: ["transfer-batches", student.course_id, student.campus_id, open],
     enabled: open,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("batches")
-        .select("id, name, timing")
-        .eq("course_id", student.course_id)
-        .eq("campus_id", student.campus_id)
-        .neq("status", "closed")
-        .order("name");
+      const data = await getBatchesFn({ data: { courseId: student.course_id, campusId: student.campus_id, excludeClosed: true } });
       return (data || []).filter((b: any) => b.id !== student.batch_id);
     },
   });
@@ -755,18 +723,18 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
     mutationFn: async () => {
       if (!batchId) throw new Error("Pick a batch");
       const fromBatchId = student.batch_id as string;
-      const { error: updErr } = await supabase.from("students").update({ batch_id: batchId }).eq("id", student.id);
-      if (updErr) throw updErr;
-      const { error: insErr } = await supabase.from("student_transfers").insert({
-        student_id: student.id,
-        kind: "batch_transfer",
-        from_batch_id: fromBatchId,
-        to_batch_id: batchId,
-        reason: reason || null,
-        performed_by: user?.id ?? null,
-        performed_by_name: fullName,
+      await createTransferFn({
+        data: {
+          student_id: student.id,
+          kind: "batch_transfer",
+          from_batch_id: fromBatchId,
+          to_batch_id: batchId,
+          reason: reason || null,
+          performed_by: user?.id ?? null,
+          performed_by_name: fullName,
+          batch_id_update: batchId,
+        },
       });
-      if (insErr) throw insErr;
       await logAudit({
         actorName: fullName, actorRole: role,
         action: "transfer_batch", entityType: "student", entityId: student.id,
@@ -817,29 +785,19 @@ function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone 
       const cancel = Math.min(Math.max(0, Number(amount)), original);
       const newDiscount = original - cancel;
       const newNet = Number(feeAssignment.gross_fee) - newDiscount;
-      const { error: faErr } = await supabase.from("fee_assignments").update({
-        discount_amount: newDiscount,
-        net_payable: newNet,
-        concession_cancelled_amount: Number(feeAssignment.concession_cancelled_amount || 0) + cancel,
-      }).eq("id", feeAssignment.id);
-      if (faErr) throw faErr;
-      // Add the cancelled amount to the next unpaid instalment
-      const { data: ins } = await supabase.from("installments").select("*").eq("fee_assignment_id", feeAssignment.id).order("installment_no");
-      const nextUnpaid = (ins || []).find((i: any) => Number(i.amount) - Number(i.amount_paid) > 0);
-      if (nextUnpaid) {
-        await supabase.from("installments").update({ amount: Number(nextUnpaid.amount) + cancel }).eq("id", nextUnpaid.id);
-      }
-      const { error: ccErr } = await supabase.from("concession_cancellations").insert({
-        student_id: student.id,
-        fee_assignment_id: feeAssignment.id,
-        original_discount: original,
-        cancelled_amount: cancel,
-        new_net_payable: newNet,
-        reason: reason || null,
-        performed_by: user?.id ?? null,
-        performed_by_name: fullName,
+      await cancelConcessionFn({
+        data: {
+          student_id: student.id,
+          fee_assignment_id: feeAssignment.id,
+          original_discount: original,
+          cancelled_amount: cancel,
+          new_net_payable: newNet,
+          new_discount: newDiscount,
+          reason: reason || null,
+          performed_by: user?.id ?? null,
+          performed_by_name: fullName,
+        },
       });
-      if (ccErr) throw ccErr;
       await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
     },
     onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
@@ -883,32 +841,26 @@ function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan,
       const year = new Date().getFullYear();
       const dueDay = 5;
 
-      // Delete unpaid instalments
-      const unpaidIds = installments.filter((i) => Number(i.amount_paid) < Number(i.amount)).map((i) => i.id);
-      if (unpaidIds.length > 0) await supabase.from("installments").delete().in("id", unpaidIds);
-
-      // Insert new instalments for the remaining months
+      const unpaidIds = installments.filter((i) => Number(i.amount_paid) < Number(i.amount)).map((i: any) => i.id);
       const newRows = newMonths.slice(paidCount).map((m, idx) => ({
-        fee_assignment_id: feeAssignment.id,
-        student_id: student.id,
         installment_no: paidCount + idx + 1,
         amount: splits[idx],
         due_date: new Date(year, m.month, dueDay).toISOString().slice(0, 10),
         month_label: m.label,
       }));
-      const { error: insErr } = await supabase.from("installments").insert(newRows);
-      if (insErr) throw insErr;
 
-      const { error: faErr } = await supabase.from("fee_assignments").update({
-        plan_kind: nextPlan, installment_count: newMonths.length,
-      }).eq("id", feeAssignment.id);
-      if (faErr) throw faErr;
-
-      await supabase.from("plan_upgrades").insert({
-        student_id: student.id, fee_assignment_id: feeAssignment.id,
-        from_plan: currentPlan, to_plan: nextPlan,
-        reason: reason || null,
-        performed_by: user?.id ?? null, performed_by_name: fullName,
+      await upgradePlanFn({
+        data: {
+          student_id: student.id,
+          fee_assignment_id: feeAssignment.id,
+          from_plan: currentPlan,
+          to_plan: nextPlan,
+          reason: reason || "",
+          performed_by: user?.id ?? null,
+          performed_by_name: fullName,
+          new_installments: newRows,
+          delete_installment_ids: unpaidIds,
+        },
       });
       await logAudit({ actorName: fullName, actorRole: role, action: "upgrade_plan", entityType: "student", entityId: student.id, oldValue: { plan: currentPlan }, newValue: { plan: nextPlan }, reason });
     },
@@ -945,18 +897,12 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
   const courses = useQuery({
     queryKey: ["promote-courses", student.campus_id, open],
     enabled: open,
-    queryFn: async () => {
-      const { data } = await supabase.from("courses").select("id, name").eq("is_active", true).eq("campus_id", student.campus_id).order("name");
-      return data || [];
-    },
+    queryFn: () => getCoursesFn({ data: { campusId: student.campus_id } }),
   });
   const batches = useQuery({
     queryKey: ["promote-batches", newCourseId],
     enabled: open && !!newCourseId,
-    queryFn: async () => {
-      const { data } = await supabase.from("batches").select("id, name, timing").eq("course_id", newCourseId).eq("campus_id", student.campus_id).neq("status", "closed").order("name");
-      return data || [];
-    },
+    queryFn: () => getBatchesFn({ data: { courseId: newCourseId, campusId: student.campus_id, excludeClosed: true } }),
   });
 
   const submit = useMutation({
@@ -965,26 +911,23 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
       const fromClass = student.class_year as string;
       const fromBatchId = student.batch_id as string;
       const fromCourseId = student.course_id as string;
-      // Update student to new class/course/batch; keep previous_class for retention reference.
-      const { error: updErr } = await supabase.from("students").update({
-        class_year: toClass,
-        course_id: newCourseId,
-        batch_id: newBatchId,
-        previous_class: fromClass,
-      }).eq("id", student.id);
-      if (updErr) throw updErr;
-      const { error: trErr } = await supabase.from("student_transfers").insert({
-        student_id: student.id,
-        kind: "class_promotion",
-        from_batch_id: fromBatchId,
-        to_batch_id: newBatchId,
-        from_class: fromClass,
-        to_class: toClass,
-        reason: reason || null,
-        performed_by: user?.id ?? null,
-        performed_by_name: fullName,
+      await createTransferFn({
+        data: {
+          student_id: student.id,
+          kind: "class_promotion",
+          from_batch_id: fromBatchId,
+          to_batch_id: newBatchId,
+          from_class: fromClass,
+          to_class: toClass,
+          reason: reason || null,
+          performed_by: user?.id ?? null,
+          performed_by_name: fullName,
+          batch_id_update: newBatchId,
+          course_id_update: newCourseId,
+          class_year_update: toClass,
+        },
       });
-      if (trErr) throw trErr;
+      await updateStudentFn({ data: { id: student.id, updates: { previous_class: fromClass } } });
       await logAudit({
         actorName: fullName, actorRole: role,
         action: "promote_class", entityType: "student", entityId: student.id,

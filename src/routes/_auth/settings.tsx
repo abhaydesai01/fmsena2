@@ -1,8 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getSettingsFn, updateSettingsFn } from "@/fns/settings";
+import { getCampusesManageFn } from "@/fns/campus";
+import { getCoursesFn } from "@/fns/courses";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState } from "@/components/app/EmptyState";
 import { Loading } from "@/components/app/Loading";
@@ -26,7 +27,7 @@ function Page() {
 
   if (!isAdmin) {
     return (
-      <div>
+      <div className="space-y-4">
         <PageHeader title="Settings" description="Institute and policy configuration." />
         <EmptyState icon={ShieldAlert} title="Admin access required" description="Only administrators can change settings." />
       </div>
@@ -35,11 +36,7 @@ function Page() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("settings").select("*").limit(1).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getSettingsFn({ data: {} }),
   });
 
   const [form, setForm] = useState<any>(null);
@@ -48,28 +45,23 @@ function Page() {
   const save = useMutation({
     mutationFn: async () => {
       if (!form) return;
-      const { error } = await supabase.from("settings").update({
-        institute_name: form.institute_name,
-        institute_address: form.institute_address,
-        active_academic_year: form.active_academic_year,
-        admission_prefix: form.admission_prefix,
-        receipt_prefix: form.receipt_prefix,
-        grace_period_days: Number(form.grace_period_days),
-        late_fee_amount: Number(form.late_fee_amount),
-        late_fee_percent: Number(form.late_fee_percent),
-        bounce_charge: Number(form.bounce_charge),
-      }).eq("id", form.id);
-      if (error) throw error;
-      await logAudit({
-        actorName: fullName, actorRole: role,
-        action: "update_settings", entityType: "settings", entityId: form.id,
-        oldValue: data, newValue: form,
+      const prev = data;
+      await updateSettingsFn({
+        data: {
+          institute_name: form.institute_name,
+          institute_address: form.institute_address,
+          active_academic_year: form.active_academic_year,
+          admission_prefix: form.admission_prefix,
+          receipt_prefix: form.receipt_prefix,
+          grace_period_days: Number(form.grace_period_days),
+          late_fee_amount: Number(form.late_fee_amount),
+          late_fee_percent: Number(form.late_fee_percent),
+          bounce_charge: Number(form.bounce_charge),
+        },
       });
+      await logAudit({ actorName: fullName, actorRole: role, action: "update_settings", entityType: "settings", oldValue: prev, newValue: form });
     },
-    onSuccess: () => {
-      toast.success("Settings saved");
-      qc.invalidateQueries({ queryKey: ["settings"] });
-    },
+    onSuccess: () => { toast.success("Settings saved"); qc.invalidateQueries({ queryKey: ["settings"] }); },
     onError: (e: any) => toast.error(e?.message || "Save failed"),
   });
 
@@ -78,10 +70,8 @@ function Page() {
   const set = (k: string, v: any) => setForm({ ...form, [k]: v });
 
   return (
-    <div>
-      <PageHeader
-        title="Settings"
-        description="Institute info, numbering prefixes, and fee policy."
+    <div className="space-y-4">
+      <PageHeader title="Settings" description="Institute info, numbering prefixes, and fee policy."
         actions={<Button onClick={() => save.mutate()} disabled={save.isPending}><Save className="h-4 w-4" /> {save.isPending ? "Saving…" : "Save Changes"}</Button>}
       />
 
@@ -132,85 +122,51 @@ function PerCampusFeeStructure() {
   const { data, isLoading } = useQuery({
     queryKey: ["settings-per-campus-fees"],
     queryFn: async () => {
-      const [campusesRes, coursesRes] = await Promise.all([
-        supabase.from("campuses").select("id, name, city, is_active").order("name"),
-        supabase
-          .from("courses")
-          .select("id, name, campus_id, gross_fee, registration_fee, material_fee, academic_year, is_active")
-          .order("name"),
+      const [campuses, courses] = await Promise.all([
+        getCampusesManageFn({ data: {} }),
+        getCoursesFn({ data: {} }),
       ]);
-      if (campusesRes.error) throw campusesRes.error;
-      if (coursesRes.error) throw coursesRes.error;
-      return { campuses: campusesRes.data || [], courses: coursesRes.data || [] };
+      return { campuses: campuses || [], courses: courses || [] };
     },
   });
 
   if (isLoading) return <Loading />;
-  const campuses = data?.campuses || [];
+  const campuses = (data?.campuses as any[]) || [];
+  const allCourses = (data?.courses as any[]) || [];
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          <Building2 className="mr-2 inline h-4 w-4" /> Per-Campus Fee Structure
-        </CardTitle>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Each campus has its own courses and fee structure. Switch to a campus and edit its
-          courses to change fees for that campus only.
-        </p>
+        <CardTitle><Building2 className="mr-2 inline h-4 w-4" /> Per-Campus Fee Structure</CardTitle>
+        <p className="mt-1 text-xs text-muted-foreground">Each campus has its own courses and fee structure.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         {campuses.length === 0 ? (
-          <EmptyState
-            icon={Building2}
-            title="No campuses yet"
-            description="Create campuses under Courses → Campuses to start configuring per-campus fees."
-          />
+          <EmptyState icon={Building2} title="No campuses yet" description="Create campuses under Courses → Campuses to start configuring per-campus fees." />
         ) : (
-          campuses.map((c) => {
-            const list = (data?.courses || []).filter((co) => co.campus_id === c.id);
+          campuses.map((c: any) => {
+            const list = allCourses.filter((co: any) => co.campus_id === c.id);
             return (
               <div key={c.id} className="rounded-lg border bg-card">
                 <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
                   <div>
                     <div className="font-medium">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {c.city || "—"} · {list.length} course{list.length === 1 ? "" : "s"}
-                    </div>
+                    <div className="text-xs text-muted-foreground">{c.city || "—"} · {list.length} course{list.length === 1 ? "" : "s"}</div>
                   </div>
-                  <Link
-                    to="/courses"
-                    onClick={() => setCampusId(c.id)}
-                    className="inline-flex items-center gap-1 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
-                  >
-                    <BookOpen className="h-3.5 w-3.5" /> Edit fees
-                    <ArrowRight className="h-3.5 w-3.5" />
+                  <Link to="/courses" onClick={() => setCampusId(c.id)} className="inline-flex items-center gap-1 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent">
+                    <BookOpen className="h-3.5 w-3.5" /> Edit fees <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </div>
                 {list.length === 0 ? (
-                  <p className="px-4 py-3 text-xs text-muted-foreground">
-                    No courses configured for this campus yet.
-                  </p>
+                  <p className="px-4 py-3 text-xs text-muted-foreground">No courses configured for this campus yet.</p>
                 ) : (
                   <div className="divide-y">
-                    {list.map((co) => (
-                      <div
-                        key={co.id}
-                        className="grid grid-cols-2 gap-2 px-4 py-2 text-sm sm:grid-cols-5"
-                      >
+                    {list.map((co: any) => (
+                      <div key={co.id} className="grid grid-cols-2 gap-2 px-4 py-2 text-sm sm:grid-cols-5">
                         <div className="sm:col-span-2 font-medium">{co.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          <span className="block">Gross</span>
-                          <span className="text-foreground">{inr(Number(co.gross_fee))}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          <span className="block">Registration</span>
-                          <span className="text-foreground">{inr(Number(co.registration_fee))}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          <span className="block">Material</span>
-                          <span className="text-foreground">{inr(Number(co.material_fee))}</span>
-                        </div>
+                        <div className="text-xs text-muted-foreground"><span className="block">Gross</span><span className="text-foreground">{inr(Number(co.gross_fee))}</span></div>
+                        <div className="text-xs text-muted-foreground"><span className="block">Registration</span><span className="text-foreground">{inr(Number(co.registration_fee))}</span></div>
+                        <div className="text-xs text-muted-foreground"><span className="block">Material</span><span className="text-foreground">{inr(Number(co.material_fee))}</span></div>
                       </div>
                     ))}
                   </div>

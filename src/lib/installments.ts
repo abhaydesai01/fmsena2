@@ -1,5 +1,4 @@
-import type { Database } from "@/integrations/supabase/types";
-export type DiscountType = Database["public"]["Enums"]["discount_type"];
+export type DiscountType = "none" | "round_off" | "special" | "slab_10" | "slab_15" | "slab_20";
 export const SLAB_PCT: Record<string, number> = { slab_10: 10, slab_15: 15, slab_20: 20 };
 
 // New fixed-month instalment plans (replaces old 3/4 split logic for new enrollments).

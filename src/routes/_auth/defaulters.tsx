@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getDefaultersFn, sendReminderFn } from "@/fns/reports";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState } from "@/components/app/EmptyState";
 import { Loading } from "@/components/app/Loading";
@@ -28,32 +28,22 @@ import { logAudit } from "@/lib/audit";
 export const Route = createFileRoute("/_auth/defaulters")({ component: Page });
 
 function Page() {
-  const { fullName, role, user } = useAuth();
+  const { fullName, role } = useAuth();
   const qc = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
   const [reminder, setReminder] = useState<{ studentId: string; mobile: string; name: string } | null>(null);
 
   const data = useQuery({
     queryKey: ["defaulters", today],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("installments")
-        .select("id, installment_no, due_date, amount, amount_paid, status, students(id, full_name, admission_number, mobile, courses(name))")
-        .lt("due_date", today)
-        .neq("status", "paid")
-        .order("due_date", { ascending: true })
-        .limit(500);
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => getDefaultersFn({ data: { today } }),
   });
 
   const summary = useMemo(() => {
-    const list = data.data || [];
+    const list = (data.data as any[]) || [];
     const studentSet = new Set<string>();
     let outstanding = 0;
-    for (const i of list as any[]) {
-      studentSet.add(i.students?.id);
+    for (const i of list) {
+      studentSet.add(i.student_id);
       outstanding += Number(i.amount) - Number(i.amount_paid);
     }
     return { count: studentSet.size, items: list.length, outstanding };
@@ -61,47 +51,25 @@ function Page() {
 
   const sendReminder = useMutation({
     mutationFn: async (msg: { channel: "sms" | "whatsapp"; message: string }) => {
-      if (!reminder || !user) return;
-      const { error } = await supabase.from("reminders").insert({
-        student_id: reminder.studentId,
-        recipient_mobile: reminder.mobile,
-        kind: "overdue",
-        channel: msg.channel,
-        message: msg.message,
-        triggered_by: user.id,
-      });
-      if (error) throw error;
-      await logAudit({
-        actorName: fullName, actorRole: role,
-        action: "send_reminder", entityType: "student", entityId: reminder.studentId,
-        newValue: { channel: msg.channel, message: msg.message },
-      });
+      if (!reminder) return;
+      await sendReminderFn({ data: { studentId: reminder.studentId, mobile: reminder.mobile, channel: msg.channel, message: msg.message } });
+      await logAudit({ actorName: fullName, actorRole: role, action: "send_reminder", entityType: "student", entityId: reminder.studentId, newValue: { channel: msg.channel, message: msg.message } });
     },
-    onSuccess: () => {
-      toast.success("Reminder logged (delivery is stubbed for now).");
-      setReminder(null);
-      qc.invalidateQueries({ queryKey: ["defaulters"] });
-    },
+    onSuccess: () => { toast.success("Reminder logged."); setReminder(null); qc.invalidateQueries({ queryKey: ["defaulters"] }); },
     onError: (e: any) => toast.error(e?.message || "Could not log reminder"),
   });
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
         title="Defaulters"
         description="Students with overdue installments. Send reminders or collect right away."
         actions={
           <Button variant="outline" size="sm" disabled={!data.data?.length}
-            onClick={() => exportCSV(`defaulters_${Date.now()}.csv`, (data.data as any[]).map((i) => ({
-              admission_number: i.students?.admission_number,
-              full_name: i.students?.full_name,
-              mobile: i.students?.mobile,
-              course: i.students?.courses?.name,
-              installment_no: i.installment_no,
-              due_date: i.due_date,
-              days_overdue: daysBetween(i.due_date),
-              amount: i.amount,
-              amount_paid: i.amount_paid,
+            onClick={() => exportCSV(`defaulters_${Date.now()}.csv`, ((data.data as any[]) || []).map((i) => ({
+              admission_number: i.admission_number, full_name: i.student_name, mobile: i.mobile,
+              course: i.course_name, installment_no: i.installment_no, due_date: i.due_date,
+              days_overdue: daysBetween(i.due_date), amount: i.amount, amount_paid: i.amount_paid,
               outstanding: Number(i.amount) - Number(i.amount_paid),
             })))}>
             <Download className="h-4 w-4" /> Export
@@ -115,9 +83,7 @@ function Page() {
         <StatCard label="Total Outstanding" value={inr(summary.outstanding)} icon={IndianRupee} tone="destructive" />
       </div>
 
-      {data.isLoading ? (
-        <Loading />
-      ) : !data.data?.length ? (
+      {data.isLoading ? <Loading /> : !(data.data as any[])?.length ? (
         <EmptyState icon={AlertTriangle} title="No defaulters 🎉" description="All installments are either paid or not yet due." />
       ) : (
         <Card>
@@ -126,25 +92,24 @@ function Page() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Admission #</TableHead>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Course</TableHead>
-                    <TableHead>Inst.</TableHead>
-                    <TableHead>Due</TableHead>
-                    <TableHead className="text-right">Days late</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead>Admission #</TableHead><TableHead>Student</TableHead><TableHead>Course</TableHead>
+                    <TableHead>Inst.</TableHead><TableHead>Due</TableHead>
+                    <TableHead className="text-right">Days late</TableHead><TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(data.data as any[]).map((i) => {
+                  {((data.data as any[]) || []).map((i) => {
                     const days = daysBetween(i.due_date);
                     const remaining = Number(i.amount) - Number(i.amount_paid);
                     return (
                       <TableRow key={i.id}>
-                        <TableCell className="font-mono text-xs">{i.students?.admission_number}</TableCell>
-                        <TableCell className="font-medium">{i.students?.full_name}<div className="text-xs text-muted-foreground">{i.students?.mobile}</div></TableCell>
-                        <TableCell className="text-sm">{i.students?.courses?.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{i.admission_number}</TableCell>
+                        <TableCell className="font-medium">
+                          <Link to="/students/$studentId" params={{ studentId: i.student_id }} className="hover:underline">{i.student_name}</Link>
+                          <div className="text-xs text-muted-foreground">{i.mobile}</div>
+                        </TableCell>
+                        <TableCell className="text-sm">{i.course_name}</TableCell>
                         <TableCell>#{i.installment_no}</TableCell>
                         <TableCell className="text-sm">{fmtDate(i.due_date)}</TableCell>
                         <TableCell className="text-right">
@@ -153,10 +118,10 @@ function Page() {
                         <TableCell className="text-right font-semibold">{inr(remaining)}</TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setReminder({ studentId: i.students?.id, mobile: i.students?.mobile, name: i.students?.full_name })}>
+                            <Button size="sm" variant="outline" onClick={() => setReminder({ studentId: i.student_id, mobile: i.mobile, name: i.student_name })}>
                               <Bell className="h-4 w-4" /> Remind
                             </Button>
-                            <Link to="/collect"><Button size="sm"><Receipt className="h-4 w-4" /> Collect</Button></Link>
+                            <Link to="/collect" search={{ q: i.admission_number }}><Button size="sm"><Receipt className="h-4 w-4" /> Collect</Button></Link>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -169,30 +134,18 @@ function Page() {
         </Card>
       )}
 
-      <ReminderDialog
-        open={!!reminder}
-        target={reminder}
-        onClose={() => setReminder(null)}
-        onSubmit={(p) => sendReminder.mutate(p)}
-        pending={sendReminder.isPending}
-      />
+      <ReminderDialog open={!!reminder} target={reminder} onClose={() => setReminder(null)} onSubmit={(p) => sendReminder.mutate(p)} pending={sendReminder.isPending} />
     </div>
   );
 }
 
-function ReminderDialog({
-  open, target, onClose, onSubmit, pending,
-}: {
-  open: boolean;
-  target: { studentId: string; mobile: string; name: string } | null;
-  onClose: () => void;
-  onSubmit: (p: { channel: "sms" | "whatsapp"; message: string }) => void;
-  pending: boolean;
+function ReminderDialog({ open, target, onClose, onSubmit, pending }: {
+  open: boolean; target: { studentId: string; mobile: string; name: string } | null;
+  onClose: () => void; onSubmit: (p: { channel: "sms" | "whatsapp"; message: string }) => void; pending: boolean;
 }) {
   const [channel, setChannel] = useState<"sms" | "whatsapp">("whatsapp");
-  const [message, setMessage] = useState(
-    "Dear Parent, this is a gentle reminder that the fee installment for your ward is overdue. Please pay at the earliest. — Excellent NEET Academy"
-  );
+  const [message, setMessage] = useState("Dear Parent, this is a gentle reminder that the fee installment for your ward is overdue. Please pay at the earliest. — Excellent NEET Academy");
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -205,20 +158,11 @@ function ReminderDialog({
             <Label className="mb-1 block text-xs">Channel</Label>
             <Select value={channel} onValueChange={(v: any) => setChannel(v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="sms">SMS</SelectItem>
-              </SelectContent>
+              <SelectContent><SelectItem value="whatsapp">WhatsApp</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent>
             </Select>
           </div>
-          <div>
-            <Label className="mb-1 block text-xs">To</Label>
-            <input className="w-full rounded-md border border-border bg-muted/30 px-3 py-2 text-sm" disabled value={target?.mobile || ""} />
-          </div>
-          <div>
-            <Label className="mb-1 block text-xs">Message</Label>
-            <Textarea rows={4} value={message} onChange={(e) => setMessage(e.target.value)} />
-          </div>
+          <div><Label className="mb-1 block text-xs">To</Label><input className="w-full rounded-md border border-border bg-muted/30 px-3 py-2 text-sm" disabled value={target?.mobile || ""} /></div>
+          <div><Label className="mb-1 block text-xs">Message</Label><Textarea rows={4} value={message} onChange={(e) => setMessage(e.target.value)} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

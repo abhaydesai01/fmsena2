@@ -1,8 +1,14 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getCampusesFn } from "@/fns/campus";
 
-export type Campus = { id: string; name: string; city: string | null; address: string | null; is_active: boolean };
+export type Campus = {
+  id: string;
+  name: string;
+  city: string | null;
+  address: string | null;
+  is_active: boolean;
+};
 
 type Ctx = {
   campuses: Campus[];
@@ -20,33 +26,37 @@ export function CampusProvider({ children }: { children: ReactNode }) {
 
   const { data, isLoading } = useQuery({
     queryKey: ["campuses-all"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("campuses")
-        .select("id, name, city, address, is_active")
-        .order("name");
-      if (error) throw error;
-      return (data || []) as Campus[];
-    },
+    queryFn: () => getCampusesFn(),
   });
 
   useEffect(() => {
     if (!data || data.length === 0) return;
     const stored = typeof window !== "undefined" ? localStorage.getItem(KEY) : null;
-    const valid = data.find((c) => c.id === stored);
+    const valid = (data as Campus[]).find((c) => c.id === stored);
     if (valid) setIdState(valid.id);
-    else setIdState(data[0].id);
+    else setIdState((data as Campus[])[0].id);
   }, [data]);
 
   const setCampusId = (id: string) => {
     setIdState(id);
-    try { localStorage.setItem(KEY, id); } catch {}
+    try {
+      localStorage.setItem(KEY, id);
+    } catch {}
   };
 
-  const campus = data?.find((c) => c.id === campusId) || null;
+  const campusList = (data || []) as Campus[];
+  const campus = campusList.find((c) => c.id === campusId) || null;
 
   return (
-    <CampusCtx.Provider value={{ campuses: data || [], loading: isLoading, campusId, campus, setCampusId }}>
+    <CampusCtx.Provider
+      value={{
+        campuses: campusList,
+        loading: isLoading,
+        campusId,
+        campus,
+        setCampusId,
+      }}
+    >
       {children}
     </CampusCtx.Provider>
   );

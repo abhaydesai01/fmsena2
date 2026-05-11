@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getChecklistCountsFn } from "@/fns/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,55 +59,18 @@ export function ClickthroughChecklist() {
   const [expanded, setExpanded] = useState<string | null>("enroll");
 
   // ------- Data probes (cheap counts so checklist is honest about what exists) -------
-  const courses = useQuery({
-    queryKey: ["checklist", "courses"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("courses").select("*", { count: "exact", head: true }).eq("is_active", true);
-      if (error) throw error;
-      return count ?? 0;
-    },
-  });
-  const batches = useQuery({
-    queryKey: ["checklist", "batches"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("batches").select("*", { count: "exact", head: true }).neq("status", "closed");
-      if (error) throw error;
-      return count ?? 0;
-    },
-  });
-  const students = useQuery({
-    queryKey: ["checklist", "students"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("students").select("*", { count: "exact", head: true }).eq("status", "active");
-      if (error) throw error;
-      return count ?? 0;
-    },
-  });
-  const installments = useQuery({
-    queryKey: ["checklist", "installments"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("installments").select("*", { count: "exact", head: true }).neq("status", "paid");
-      if (error) throw error;
-      return count ?? 0;
-    },
-  });
-  const payments = useQuery({
-    queryKey: ["checklist", "payments"],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("payments").select("*", { count: "exact", head: true }).neq("status", "cancelled");
-      if (error) throw error;
-      return count ?? 0;
-    },
+  const counts = useQuery({
+    queryKey: ["checklist", "counts"],
+    queryFn: () => getChecklistCountsFn(),
   });
 
-  const loading =
-    courses.isLoading || batches.isLoading || students.isLoading ||
-    installments.isLoading || payments.isLoading;
+  const courses = { isLoading: counts.isLoading, data: counts.data?.courses };
+  const batches = { isLoading: counts.isLoading, data: counts.data?.batches };
+  const students = { isLoading: counts.isLoading, data: counts.data?.students };
+  const installments = { isLoading: counts.isLoading, data: counts.data?.installments };
+  const payments = { isLoading: counts.isLoading, data: counts.data?.payments };
+
+  const loading = counts.isLoading;
 
   const steps: Step[] = useMemo(() => {
     const L = (q: typeof courses): Status => (q.isLoading ? "loading" : "pass");

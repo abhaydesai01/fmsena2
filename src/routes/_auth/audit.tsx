@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getAuditLogFn } from "@/fns/audit";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState } from "@/components/app/EmptyState";
 import { Loading } from "@/components/app/Loading";
@@ -30,7 +30,7 @@ function Page() {
 
   if (!isAdmin) {
     return (
-      <div>
+      <div className="space-y-4">
         <PageHeader title="Audit Trail" description="System log of every action taken." />
         <EmptyState icon={ShieldAlert} title="Admin access required" description="Only administrators can view the audit trail." />
       </div>
@@ -39,20 +39,13 @@ function Page() {
 
   const data = useQuery({
     queryKey: ["audit", from, to],
-    queryFn: async () => {
-      let query = supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500);
-      if (from) query = query.gte("created_at", from);
-      if (to) query = query.lte("created_at", to + "T23:59:59");
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => getAuditLogFn({ data: { from: from || undefined, to: to || undefined } }),
   });
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return data.data || [];
-    return (data.data || []).filter((r: any) =>
+    if (!term) return (data.data as any[]) || [];
+    return ((data.data as any[]) || []).filter((r) =>
       r.actor_name?.toLowerCase().includes(term) ||
       r.action?.toLowerCase().includes(term) ||
       r.entity_type?.toLowerCase().includes(term)
@@ -60,7 +53,7 @@ function Page() {
   }, [data.data, q]);
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader title="Audit Trail" description="System log of every action taken." />
 
       <Card className="mb-4">
@@ -69,20 +62,12 @@ function Page() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search actor, action, entity…" className="pl-9" />
           </div>
-          <div>
-            <Label className="mb-1 block text-xs">From</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div>
-            <Label className="mb-1 block text-xs">To</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
+          <div><Label className="mb-1 block text-xs">From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Label className="mb-1 block text-xs">To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </CardContent>
       </Card>
 
-      {data.isLoading ? (
-        <Loading />
-      ) : filtered.length === 0 ? (
+      {data.isLoading ? <Loading /> : filtered.length === 0 ? (
         <EmptyState icon={ShieldCheck} title="No audit entries" description="Actions like enrollments, collections, and edits will appear here." />
       ) : (
         <Card>
@@ -91,13 +76,8 @@ function Page() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>When</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead>When</TableHead><TableHead>Actor</TableHead><TableHead>Role</TableHead>
+                    <TableHead>Action</TableHead><TableHead>Entity</TableHead><TableHead>Reason</TableHead><TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -125,9 +105,9 @@ function Page() {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Audit entry · {view?.action}</DialogTitle></DialogHeader>
           <div className="space-y-3 text-sm">
-            <Row k="When" v={view ? fmtDateTime(view.created_at) : ""} />
-            <Row k="Actor" v={`${view?.actor_name} (${view?.actor_role})`} />
-            <Row k="Entity" v={`${view?.entity_type}${view?.entity_id ? " · " + view.entity_id : ""}`} />
+            <AuditRow k="When" v={view ? fmtDateTime(view.created_at) : ""} />
+            <AuditRow k="Actor" v={`${view?.actor_name} (${view?.actor_role})`} />
+            <AuditRow k="Entity" v={`${view?.entity_type}${view?.entity_id ? " · " + view.entity_id : ""}`} />
             {view?.old_value && <JsonBlock title="Previous" value={view.old_value} />}
             {view?.new_value && <JsonBlock title="New" value={view.new_value} />}
           </div>
@@ -137,12 +117,12 @@ function Page() {
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function AuditRow({ k, v }: { k: string; v: string }) {
   return <div className="flex justify-between gap-4"><span className="text-muted-foreground">{k}</span><span className="font-medium">{v}</span></div>;
 }
 function JsonBlock({ title, value }: { title: string; value: any }) {
   return (
-    <div>
+    <div className="space-y-1">
       <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">{title}</div>
       <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(value, null, 2)}</pre>
     </div>

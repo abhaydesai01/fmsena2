@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { logAuditFn } from "@/fns/audit";
 
 export async function logAudit(opts: {
   actorName: string;
@@ -10,17 +10,20 @@ export async function logAudit(opts: {
   newValue?: unknown;
   reason?: string;
 }) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from("audit_log").insert({
-    actor_id: user.id,
-    actor_name: opts.actorName,
-    actor_role: opts.actorRole,
-    action: opts.action,
-    entity_type: opts.entityType,
-    entity_id: opts.entityId ?? null,
-    old_value: (opts.oldValue ?? null) as never,
-    new_value: (opts.newValue ?? null) as never,
-    reason: opts.reason ?? null,
-  });
+  try {
+    await logAuditFn({
+      data: {
+        actorName: opts.actorName,
+        actorRole: opts.actorRole,
+        action: opts.action,
+        entityType: opts.entityType,
+        entityId: opts.entityId ?? null,
+        oldValue: opts.oldValue ?? null,
+        newValue: opts.newValue ?? null,
+        reason: opts.reason,
+      },
+    });
+  } catch (e) {
+    console.warn("logAudit failed:", e);
+  }
 }

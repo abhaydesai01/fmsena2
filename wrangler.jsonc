@@ -1,7 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
+  "name": "ena-fees",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  // Secrets (MONGO_URI, JWT_SECRET) are set via:
+  //   wrangler secret put MONGO_URI
+  //   wrangler secret put JWT_SECRET
+  // Do NOT put secret values directly in this file.
 }

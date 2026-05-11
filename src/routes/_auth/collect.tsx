@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getCoursesFn } from "@/fns/courses";
+import { searchStudentsFn } from "@/fns/students";
+import { getInstallmentsFn, getFeeAssignmentFn } from "@/fns/students";
+import { nextReceiptNumberFn, recordPaymentFn } from "@/fns/payments";
+import { cancelConcessionFn } from "@/fns/students";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState } from "@/components/app/EmptyState";
 import { StatusBadge } from "@/components/app/StatusBadge";
@@ -24,10 +28,16 @@ import { toast } from "sonner";
 import { Search, Receipt, IndianRupee, CheckCircle2, Filter, X } from "lucide-react";
 import { inr, fmtDate, modeLabel } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 import { logAudit } from "@/lib/audit";
 import logoUrl from "@/assets/logo.png";
 
-export const Route = createFileRoute("/_auth/collect")({ component: Page });
+export const Route = createFileRoute("/_auth/collect")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    q: typeof s.q === "string" ? s.q : undefined,
+  }),
+  component: Page,
+});
 
 type Inst = {
   id: string; installment_no: number; due_date: string; amount: number;
@@ -39,146 +49,49 @@ type FA = {
 };
 type Student = {
   id: string; admission_number: string; full_name: string; mobile: string;
-  courses?: { name: string } | null; batches?: { name: string } | null;
-};
-
-type BrowseRow = Student & {
-  course_id: string;
-  total: number;
-  paid: number;
-  due: number;
-  pay_status: "paid" | "partial" | "due" | "overdue";
+  courses?: { name: string } | null;
+  batches?: { name: string } | null;
 };
 
 function Page() {
   const { fullName, role, user } = useAuth();
+  const { campusId } = useCampus();
   const qc = useQueryClient();
-  const [q, setQ] = useState("");
+  const { q: initialQ } = Route.useSearch();
+  const [q, setQ] = useState(initialQ ?? "");
   const [selected, setSelected] = useState<Student | null>(null);
   const [payInst, setPayInst] = useState<Inst | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<{
-    no: string;
-    student: string;
-    admissionNumber: string;
-    course: string;
-    amount: number;
-    mode: string;
-    reference: string;
-    paidAt: string;
-    totalFee: number;
-    totalPaid: number;
-    balance: number;
-    installmentNo: number;
-  } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<any>(null);
   const [courseFilter, setCourseFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
-  const [studentStatusFilter, setStudentStatusFilter] = useState<"all" | "active" | "discontinued" | "completed">("active");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [studentStatusFilter, setStudentStatusFilter] = useState<string>("active");
   const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
 
   const courses = useQuery({
     queryKey: ["collect", "courses"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("courses")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name");
-      return data || [];
-    },
-  });
-
-  const browse = useQuery({
-    queryKey: ["collect", "browse", courseFilter, statusFilter, studentStatusFilter],
-    enabled: !selected && q.trim().length < 2,
-    queryFn: async () => {
-      let sQ = supabase
-        .from("students")
-        .select("id, admission_number, full_name, mobile, course_id, courses(name), batches(name)")
-        .order("full_name")
-        .limit(500);
-      if (courseFilter !== "all") sQ = sQ.eq("course_id", courseFilter);
-      if (studentStatusFilter !== "all") sQ = sQ.eq("status", studentStatusFilter as any);
-      const { data: students } = await sQ;
-      const list = (students || []) as (Student & { course_id: string })[];
-      if (list.length === 0) return [] as BrowseRow[];
-
-      const ids = list.map((s) => s.id);
-      const { data: ins } = await supabase
-        .from("installments")
-        .select("student_id, amount, amount_paid, status, due_date")
-        .in("student_id", ids);
-
-      const today = new Date().toISOString().slice(0, 10);
-      const agg = new Map<string, { total: number; paid: number; hasOverdue: boolean }>();
-      for (const i of ins || []) {
-        const a = agg.get(i.student_id) || { total: 0, paid: 0, hasOverdue: false };
-        a.total += Number(i.amount);
-        a.paid += Number(i.amount_paid);
-        const remaining = Number(i.amount) - Number(i.amount_paid);
-        if (remaining > 0 && i.due_date < today) a.hasOverdue = true;
-        agg.set(i.student_id, a);
-      }
-
-      const rows: BrowseRow[] = list.map((s) => {
-        const a = agg.get(s.id) || { total: 0, paid: 0, hasOverdue: false };
-        const due = a.total - a.paid;
-        let pay_status: BrowseRow["pay_status"] = "due";
-        if (a.total === 0) pay_status = "due";
-        else if (due <= 0) pay_status = "paid";
-        else if (a.hasOverdue) pay_status = "overdue";
-        else if (a.paid > 0) pay_status = "partial";
-        return { ...s, total: a.total, paid: a.paid, due, pay_status };
-      });
-
-      return statusFilter === "all" ? rows : rows.filter((r) => r.pay_status === statusFilter);
-    },
+    queryFn: () => getCoursesFn({ data: { activeOnly: true } }),
   });
 
   const search = useQuery({
-    queryKey: ["collect", "search", q],
+    queryKey: ["collect", "search", q, campusId],
     enabled: q.trim().length >= 2,
-    queryFn: async () => {
-      const term = q.trim();
-      const { data } = await supabase
-        .from("students")
-        .select("id, admission_number, full_name, mobile, courses(name), batches(name)")
-        .or(`full_name.ilike.%${term}%,admission_number.ilike.%${term}%,mobile.ilike.%${term}%`)
-        .eq("status", "active")
-        .limit(20);
-      return (data || []) as Student[];
-    },
+    queryFn: () => searchStudentsFn({ data: { q: q.trim(), campusId: campusId ?? undefined } }),
   });
 
   const installments = useQuery({
     queryKey: ["collect", "installments", selected?.id],
     enabled: !!selected,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("installments")
-        .select("id, installment_no, due_date, amount, amount_paid, status, late_fee")
-        .eq("student_id", selected!.id)
-        .order("installment_no");
-      return (data || []) as Inst[];
-    },
+    queryFn: () => getInstallmentsFn({ data: { studentId: selected!.id } }),
   });
 
   const feeAssignment = useQuery({
     queryKey: ["collect", "fee_assignment", selected?.id],
     enabled: !!selected,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("fee_assignments")
-        .select("id, gross_fee, discount_amount, net_payable, concession_cancelled_amount")
-        .eq("student_id", selected!.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return data as FA | null;
-    },
+    queryFn: () => getFeeAssignmentFn({ data: { studentId: selected!.id } }),
   });
 
   const totals = useMemo(() => {
-    const list = installments.data || [];
+    const list = (installments.data as Inst[]) || [];
     const total = list.reduce((s, i) => s + Number(i.amount), 0);
     const paid = list.reduce((s, i) => s + Number(i.amount_paid), 0);
     return { total, paid, due: total - paid };
@@ -190,75 +103,55 @@ function Page() {
       cheque_number?: string; cheque_bank?: string; cheque_date?: string;
       upi_reference?: string; card_last4?: string; notes?: string;
     }) => {
-      if (!payInst || !selected || !user) throw new Error("Missing context");
-      const { data: rcpt, error: rErr } = await supabase.rpc("next_receipt_number", { _year: "2025-26" });
-      if (rErr) throw rErr;
+      if (!payInst || !selected) throw new Error("Missing context");
       const status = form.payment_mode === "cheque" || form.payment_mode === "dd" ? "pending" : "cleared";
-      const { data: pay, error: pErr } = await supabase.from("payments").insert({
-        installment_id: payInst.id,
-        student_id: selected.id,
-        amount: form.amount,
-        payment_mode: form.payment_mode,
-        receipt_number: rcpt as string,
-        collected_by: user.id,
-        collected_by_name: fullName || "Cashier",
-        status,
-        cheque_number: form.cheque_number || null,
-        cheque_bank: form.cheque_bank || null,
-        cheque_date: form.cheque_date || null,
-        upi_reference: form.upi_reference || null,
-        card_last4: form.card_last4 || null,
-        notes: form.notes || null,
-      }).select("*").single();
-      if (pErr) throw pErr;
+      const receiptNo = await nextReceiptNumberFn({ data: { year: new Date().getFullYear().toString() } });
+      const pay = await recordPaymentFn({
+        data: {
+          installment_id: payInst.id,
+          student_id: selected.id,
+          amount: form.amount,
+          payment_mode: form.payment_mode,
+          receipt_number: receiptNo,
+          collected_by: user?.id ?? "",
+          collected_by_name: fullName || "Cashier",
+          status,
+          cheque_number: form.cheque_number || null,
+          cheque_bank: form.cheque_bank || null,
+          cheque_date: form.cheque_date || null,
+          upi_reference: form.upi_reference || null,
+          card_last4: form.card_last4 || null,
+          notes: form.notes || null,
+        },
+      }) as any;
       await logAudit({
         actorName: fullName, actorRole: role,
-        action: "collect_payment", entityType: "payment", entityId: pay.id,
-        newValue: { receipt: rcpt, amount: form.amount, mode: form.payment_mode },
+        action: "collect_payment", entityType: "payment", entityId: pay?.id,
+        newValue: { receipt: pay?.receipt_number ?? receiptNo, amount: form.amount, mode: form.payment_mode },
       });
       const reference =
         form.payment_mode === "cheque" || form.payment_mode === "dd"
           ? `${form.cheque_bank || ""} ${form.cheque_number || ""}`.trim()
-          : form.payment_mode === "upi"
-            ? form.upi_reference || ""
-            : form.payment_mode === "card"
-              ? form.card_last4
-                ? `**** ${form.card_last4}`
-                : ""
-              : "";
-      const totalFee = totals.total;
-      const totalPaidAfter = totals.paid + Number(form.amount || 0);
+          : form.payment_mode === "upi" ? form.upi_reference || ""
+          : form.payment_mode === "card" && form.card_last4 ? `**** ${form.card_last4}` : "";
       return {
-        receipt: rcpt as string,
+        receipt: pay?.receipt_number ?? receiptNo,
         amount: Number(form.amount || 0),
         student: selected.full_name,
         admissionNumber: selected.admission_number,
-        course: selected.courses?.name || "",
+                course: selected.courses?.name || "",
         mode: form.payment_mode,
         reference,
         paidAt: new Date().toISOString(),
-        totalFee,
-        totalPaid: totalPaidAfter,
-        balance: Math.max(0, totalFee - totalPaidAfter),
+        totalFee: totals.total,
+        totalPaid: totals.paid + Number(form.amount || 0),
+        balance: Math.max(0, totals.total - (totals.paid + Number(form.amount || 0))),
         installmentNo: payInst.installment_no,
       };
     },
     onSuccess: (r) => {
       toast.success(`Receipt ${r.receipt} generated`);
-      setLastReceipt({
-        no: r.receipt,
-        student: r.student,
-        admissionNumber: r.admissionNumber,
-        course: r.course,
-        amount: r.amount,
-        mode: r.mode,
-        reference: r.reference,
-        paidAt: r.paidAt,
-        totalFee: r.totalFee,
-        totalPaid: r.totalPaid,
-        balance: r.balance,
-        installmentNo: r.installmentNo,
-      });
+      setLastReceipt(r);
       setPayInst(null);
       qc.invalidateQueries({ queryKey: ["collect", "installments"] });
       qc.invalidateQueries({ queryKey: ["dash"] });
@@ -266,8 +159,10 @@ function Page() {
     onError: (e: any) => toast.error(e?.message || "Payment failed"),
   });
 
+  const searchList = (search.data as Student[]) || [];
+
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader title="Collect Fee" description="Search a student, pick an installment, record the payment." />
 
       <Card className="mb-4">
@@ -277,9 +172,9 @@ function Page() {
             <Input value={q} onChange={(e) => { setQ(e.target.value); setSelected(null); }} placeholder="Type name, admission number, or mobile (min 2 chars)…" className="pl-9" />
           </div>
 
-          {q.trim().length >= 2 && search.data && search.data.length > 0 && !selected && (
+          {q.trim().length >= 2 && searchList.length > 0 && !selected && (
             <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-border">
-              {search.data.map((s) => (
+              {searchList.map((s) => (
                 <button key={s.id} onClick={() => setSelected(s)} className="flex w-full items-center justify-between border-b border-border px-3 py-2 text-left last:border-0 hover:bg-muted">
                   <div>
                     <div className="font-medium">{s.full_name}</div>
@@ -290,110 +185,11 @@ function Page() {
               ))}
             </div>
           )}
-          {q.trim().length >= 2 && search.data && search.data.length === 0 && (
+          {q.trim().length >= 2 && searchList.length === 0 && !search.isLoading && (
             <p className="mt-3 text-sm text-muted-foreground">No active students match.</p>
-          )}
-
-          {!selected && q.trim().length < 2 && (
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Filter className="h-3.5 w-3.5" /> Filters
-              </div>
-              <Select value={courseFilter} onValueChange={setCourseFilter}>
-                <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Course" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All courses</SelectItem>
-                  {courses.data?.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-                <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Fee status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="paid">Fully paid</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                  <SelectItem value="due">Due</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={studentStatusFilter} onValueChange={(v: any) => setStudentStatusFilter(v)}>
-                <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Student status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All students</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="discontinued">Discontinued</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              {(courseFilter !== "all" || statusFilter !== "all" || studentStatusFilter !== "active") && (
-                <Button variant="ghost" size="sm" onClick={() => { setCourseFilter("all"); setStatusFilter("all"); setStudentStatusFilter("active"); }}>
-                  <X className="h-3.5 w-3.5" /> Clear
-                </Button>
-              )}
-              <span className="ml-auto text-xs text-muted-foreground">
-                {browse.isLoading ? "Loading…" : `${browse.data?.length ?? 0} students`}
-              </span>
-            </div>
           )}
         </CardContent>
       </Card>
-
-      {!selected && q.trim().length < 2 && (
-        <Card className="mb-4">
-          <CardContent className="p-0">
-            {browse.isLoading ? (
-              <Loading />
-            ) : (browse.data?.length ?? 0) === 0 ? (
-              <EmptyState
-                icon={Receipt}
-                title="No students match these filters"
-                description="Adjust the course or fee status filter, or search by name above."
-              />
-            ) : (
-              <div className="max-h-[480px] overflow-y-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-card">
-                    <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead>Course / Batch</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Outstanding</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {browse.data?.map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell>
-                          <div className="font-medium">{s.full_name}</div>
-                          <div className="text-xs text-muted-foreground">{s.admission_number} · {s.mobile}</div>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {s.courses?.name || "—"}<br />
-                          <span className="text-xs">{s.batches?.name || ""}</span>
-                        </TableCell>
-                        <TableCell className="text-right">{inr(s.total)}</TableCell>
-                        <TableCell className={`text-right font-medium ${s.due > 0 ? "text-destructive" : ""}`}>
-                          {inr(s.due)}
-                        </TableCell>
-                        <TableCell><StatusBadge status={s.pay_status} /></TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant={s.due > 0 ? "default" : "outline"} onClick={() => setSelected(s)}>
-                            {s.due > 0 ? "Collect" : "View"}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {selected && (
         <Card>
@@ -411,37 +207,26 @@ function Page() {
               <Stat label="Outstanding" value={inr(totals.due)} accent="destructive" />
             </div>
 
-            {feeAssignment.data && Number(feeAssignment.data.discount_amount) > 0 && (
+            {feeAssignment.data && Number((feeAssignment.data as FA).discount_amount) > 0 && (
               <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
                 <div>
-                  <div className="font-medium">Concession active · {inr(Number(feeAssignment.data.discount_amount))}</div>
+                  <div className="font-medium">Concession active · {inr(Number((feeAssignment.data as FA).discount_amount))}</div>
                   <div className="text-xs text-muted-foreground">Cancel the concession to add the amount back to the next unpaid instalment.</div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => setCancelConcessionOpen(true)}>Cancel concession</Button>
               </div>
             )}
-            {feeAssignment.data && Number(feeAssignment.data.concession_cancelled_amount) > 0 && (
-              <div className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                Concession cancelled previously · {inr(Number(feeAssignment.data.concession_cancelled_amount))}
-              </div>
-            )}
 
-            {installments.isLoading ? (
-              <Loading />
-            ) : (
+            {installments.isLoading ? <Loading /> : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Due</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead>#</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead><TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {installments.data?.map((i) => {
+                  {(installments.data as Inst[] || []).map((i) => {
                     const remaining = Number(i.amount) - Number(i.amount_paid);
                     return (
                       <TableRow key={i.id}>
@@ -491,27 +276,23 @@ function Page() {
                   <div className="text-xs text-muted-foreground">Fee Receipt</div>
                 </div>
                 <div className="ml-auto text-right text-xs">
-                  <div className="font-mono font-semibold">#{lastReceipt.no}</div>
+                  <div className="font-mono font-semibold">#{lastReceipt.receipt}</div>
                   <div className="text-muted-foreground">
-                    {new Date(lastReceipt.paidAt).toLocaleString("en-IN", {
-                      day: "2-digit", month: "short", year: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                    })}
+                    {new Date(lastReceipt.paidAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 py-3">
-                <Row k="Student" v={lastReceipt.student} />
-                <Row k="Adm. No" v={<span className="font-mono">{lastReceipt.admissionNumber}</span>} />
-                <Row k="Course" v={lastReceipt.course || "—"} />
-                <Row k="Installment" v={`#${lastReceipt.installmentNo}`} />
-                <Row k="Mode" v={modeLabel(lastReceipt.mode)} />
-                <Row k="Reference" v={lastReceipt.reference || "—"} />
+                <ReceiptRow k="Student" v={lastReceipt.student} />
+                <ReceiptRow k="Adm. No" v={<span className="font-mono">{lastReceipt.admissionNumber}</span>} />
+                <ReceiptRow k="Course" v={lastReceipt.course || "—"} />
+                <ReceiptRow k="Installment" v={`#${lastReceipt.installmentNo}`} />
+                <ReceiptRow k="Mode" v={modeLabel(lastReceipt.mode)} />
+                <ReceiptRow k="Reference" v={lastReceipt.reference || "—"} />
               </div>
               <div className="space-y-1 border-t border-border pt-3">
                 <div className="flex justify-between text-base font-semibold">
-                  <span>Amount Received</span>
-                  <span>{inr(lastReceipt.amount)}</span>
+                  <span>Amount Received</span><span>{inr(lastReceipt.amount)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Total Fee</span><span>{inr(lastReceipt.totalFee)}</span>
@@ -542,7 +323,9 @@ function Page() {
           open={cancelConcessionOpen}
           onClose={() => setCancelConcessionOpen(false)}
           student={selected}
-          feeAssignment={feeAssignment.data}
+          feeAssignment={feeAssignment.data as FA}
+          actorName={fullName}
+          actorRole={role}
           onDone={() => {
             qc.invalidateQueries({ queryKey: ["collect", "installments"] });
             qc.invalidateQueries({ queryKey: ["collect", "fee_assignment"] });
@@ -553,14 +336,9 @@ function Page() {
   );
 }
 
-function PaymentDialog({
-  open, onClose, installment, onSubmit, pending,
-}: {
-  open: boolean;
-  onClose: () => void;
-  installment: Inst | null;
-  onSubmit: (f: any) => void;
-  pending: boolean;
+function PaymentDialog({ open, onClose, installment, onSubmit, pending }: {
+  open: boolean; onClose: () => void; installment: Inst | null;
+  onSubmit: (f: any) => void; pending: boolean;
 }) {
   const remaining = installment ? Number(installment.amount) - Number(installment.amount_paid) : 0;
   const [amount, setAmount] = useState(remaining);
@@ -572,7 +350,6 @@ function PaymentDialog({
   const [cardLast4, setCardLast4] = useState("");
   const [notes, setNotes] = useState("");
 
-  // reset when installment changes
   useMemo(() => {
     setAmount(remaining); setMode("cash");
     setChequeNo(""); setChequeBank(""); setChequeDate("");
@@ -587,86 +364,44 @@ function PaymentDialog({
           <DialogDescription>Outstanding {inr(remaining)} due {installment ? fmtDate(installment.due_date) : "—"}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
-          <Field label="Amount">
-            <Input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
-          </Field>
-          <Field label="Payment Mode">
+          <PField label="Amount"><Input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></PField>
+          <PField label="Payment Mode">
             <Select value={mode} onValueChange={(v: any) => setMode(v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="upi">UPI</SelectItem>
-                <SelectItem value="cheque">Cheque</SelectItem>
-                <SelectItem value="dd">DD</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem><SelectItem value="upi">UPI</SelectItem>
+                <SelectItem value="cheque">Cheque</SelectItem><SelectItem value="dd">DD</SelectItem>
                 <SelectItem value="card">Card</SelectItem>
               </SelectContent>
             </Select>
-          </Field>
-          {mode === "upi" && (
-            <Field label="UPI Reference">
-              <Input value={upiRef} onChange={(e) => setUpiRef(e.target.value)} />
-            </Field>
-          )}
+          </PField>
+          {mode === "upi" && <PField label="UPI Reference"><Input value={upiRef} onChange={(e) => setUpiRef(e.target.value)} /></PField>}
           {(mode === "cheque" || mode === "dd") && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label={`${modeLabel(mode)} Number`}>
-                <Input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} />
-              </Field>
-              <Field label="Bank">
-                <Input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} />
-              </Field>
-              <Field label="Date" className="col-span-2">
-                <Input type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)} />
-              </Field>
+              <PField label={`${modeLabel(mode)} Number`}><Input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></PField>
+              <PField label="Bank"><Input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} /></PField>
+              <PField label="Date" className="col-span-2"><Input type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)} /></PField>
             </div>
           )}
-          {mode === "card" && (
-            <Field label="Card Last 4">
-              <Input maxLength={4} value={cardLast4} onChange={(e) => setCardLast4(e.target.value)} />
-            </Field>
-          )}
-          <Field label="Notes">
-            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </Field>
+          {mode === "card" && <PField label="Card Last 4"><Input maxLength={4} value={cardLast4} onChange={(e) => setCardLast4(e.target.value)} /></PField>}
+          <PField label="Notes"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></PField>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSubmit({
-            amount, payment_mode: mode,
-            cheque_number: chequeNo, cheque_bank: chequeBank, cheque_date: chequeDate || undefined,
-            upi_reference: upiRef, card_last4: cardLast4, notes,
-          })} disabled={pending || !amount || amount > remaining}>
+          <Button onClick={() => onSubmit({ amount, payment_mode: mode, cheque_number: chequeNo, cheque_bank: chequeBank, cheque_date: chequeDate || undefined, upi_reference: upiRef, card_last4: cardLast4, notes })} disabled={pending || !amount || amount > remaining}>
             {pending ? "Recording…" : <><Receipt className="h-4 w-4" /> Record & Generate Receipt</>}
           </Button>
-          {amount > remaining && (
-            <div className="text-xs text-destructive">Amount exceeds outstanding {inr(remaining)}.</div>
-          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
-  return <div className={className}><Label className="mb-1 block text-xs">{label}</Label>{children}</div>;
-}
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "success" | "destructive" }) {
-  const cls = accent === "success" ? "text-success" : accent === "destructive" ? "text-destructive" : "";
-  return (
-    <div className="rounded-md border border-border p-3">
-      <div className="text-xs uppercase text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lg font-bold ${cls}`}>{value}</div>
-    </div>
-  );
-}
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 py-0.5"><span className="text-muted-foreground">{k}</span><span className="font-medium">{v}</span></div>
-  );
-}
-
-function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone }: { open: boolean; onClose: () => void; student: Student; feeAssignment: FA; onDone: () => void }) {
-  const { fullName, role, user } = useAuth();
+function CancelConcessionDialog({ open, onClose, student, feeAssignment, actorName, actorRole, onDone }: {
+  open: boolean; onClose: () => void; student: Student; feeAssignment: FA;
+  actorName: string; actorRole: "admin" | "cashier" | null; onDone: () => void;
+}) {
+  const { user } = useAuth();
   const original = Number(feeAssignment.discount_amount || 0);
   const [amount, setAmount] = useState(original);
   const [reason, setReason] = useState("Overdue payment");
@@ -678,29 +413,20 @@ function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone 
       const cancel = Math.min(Math.max(0, Number(amount)), original);
       const newDiscount = original - cancel;
       const newNet = Number(feeAssignment.gross_fee) - newDiscount;
-      const { error: faErr } = await supabase.from("fee_assignments").update({
-        discount_amount: newDiscount,
-        net_payable: newNet,
-        concession_cancelled_amount: Number(feeAssignment.concession_cancelled_amount || 0) + cancel,
-      }).eq("id", feeAssignment.id);
-      if (faErr) throw faErr;
-      const { data: ins } = await supabase.from("installments").select("*").eq("fee_assignment_id", feeAssignment.id).order("installment_no");
-      const nextUnpaid = (ins || []).find((i: any) => Number(i.amount) - Number(i.amount_paid) > 0);
-      if (nextUnpaid) {
-        await supabase.from("installments").update({ amount: Number(nextUnpaid.amount) + cancel }).eq("id", nextUnpaid.id);
-      }
-      const { error: ccErr } = await supabase.from("concession_cancellations").insert({
-        student_id: student.id,
-        fee_assignment_id: feeAssignment.id,
-        original_discount: original,
-        cancelled_amount: cancel,
-        new_net_payable: newNet,
-        reason: reason || null,
-        performed_by: user?.id ?? null,
-        performed_by_name: fullName,
+      await cancelConcessionFn({
+        data: {
+          student_id: student.id,
+          fee_assignment_id: feeAssignment.id,
+          original_discount: original,
+          cancelled_amount: cancel,
+          new_net_payable: newNet,
+          new_discount: newDiscount,
+          reason: reason || null,
+          performed_by: user?.id ?? null,
+          performed_by_name: actorName,
+        },
       });
-      if (ccErr) throw ccErr;
-      await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
+      await logAudit({ actorName, actorRole, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { cancelled: cancel, new_discount: newDiscount }, reason });
     },
     onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
     onError: (e: any) => toast.error(e?.message || "Failed"),
@@ -724,4 +450,20 @@ function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone 
       </DialogContent>
     </Dialog>
   );
+}
+
+function PField({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return <div className={className}><Label className="mb-1 block text-xs">{label}</Label>{children}</div>;
+}
+function Stat({ label, value, accent }: { label: string; value: string; accent?: "success" | "destructive" }) {
+  const cls = accent === "success" ? "text-success" : accent === "destructive" ? "text-destructive" : "";
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="text-xs uppercase text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-lg font-bold ${cls}`}>{value}</div>
+    </div>
+  );
+}
+function ReceiptRow({ k, v }: { k: string; v: React.ReactNode }) {
+  return <div className="flex justify-between gap-4 py-0.5"><span className="text-muted-foreground">{k}</span><span className="font-medium">{v}</span></div>;
 }

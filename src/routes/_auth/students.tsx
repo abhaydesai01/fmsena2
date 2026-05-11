@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { getStudentsFn } from "@/fns/students";
+import { getCoursesFn } from "@/fns/courses";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState } from "@/components/app/EmptyState";
 import { StatusBadge } from "@/components/app/StatusBadge";
@@ -29,26 +30,12 @@ function Page() {
 
   const courses = useQuery({
     queryKey: ["students", "courses-filter"],
-    queryFn: async () => {
-      const { data } = await supabase.from("courses").select("id, name").order("name");
-      return data || [];
-    },
+    queryFn: () => getCoursesFn({ data: {} }),
   });
 
   const students = useQuery({
     queryKey: ["students", "list", status, courseId],
-    queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("id, admission_number, full_name, mobile, class_year, status, admission_date, courses(name), batches(name)")
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (status !== "all") query = query.eq("status", status as any);
-      if (courseId !== "all") query = query.eq("course_id", courseId);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => getStudentsFn({ data: { status: status === "all" ? undefined : status, courseId: courseId === "all" ? undefined : courseId } }),
   });
 
   const filtered = useMemo(() => {
@@ -63,7 +50,7 @@ function Page() {
   }, [students.data, q]);
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
         title="Students"
         description="Search and filter all enrolled students."
@@ -102,7 +89,7 @@ function Page() {
             <SelectTrigger><SelectValue placeholder="Course" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All courses</SelectItem>
-              {courses.data?.map((c) => (
+              {(courses.data || []).map((c: any) => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
             </SelectContent>

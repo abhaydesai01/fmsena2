@@ -153,11 +153,31 @@
 @layer base {
   * {
     border-color: var(--color-border);
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100%;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Prevent any element from blowing out the horizontal layout */
+  img, video, svg, canvas, iframe {
+    max-width: 100%;
+  }
+}
+
+@layer utilities {
+  /* Scrollable table wrapper — apply to any <div> wrapping a <table> */
+  .table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
