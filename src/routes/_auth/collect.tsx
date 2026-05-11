@@ -25,6 +25,7 @@ import { Search, Receipt, IndianRupee, CheckCircle2, Filter, X } from "lucide-re
 import { inr, fmtDate, modeLabel } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import logoUrl from "@/assets/logo.png";
 
 export const Route = createFileRoute("/_auth/collect")({ component: Page });
 
@@ -55,7 +56,20 @@ function Page() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Student | null>(null);
   const [payInst, setPayInst] = useState<Inst | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<{ no: string; student: string; amount: number } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<{
+    no: string;
+    student: string;
+    admissionNumber: string;
+    course: string;
+    amount: number;
+    mode: string;
+    reference: string;
+    paidAt: string;
+    totalFee: number;
+    totalPaid: number;
+    balance: number;
+    installmentNo: number;
+  } | null>(null);
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "partial" | "due" | "overdue">("all");
   const [studentStatusFilter, setStudentStatusFilter] = useState<"all" | "active" | "discontinued" | "completed">("active");
@@ -202,11 +216,49 @@ function Page() {
         action: "collect_payment", entityType: "payment", entityId: pay.id,
         newValue: { receipt: rcpt, amount: form.amount, mode: form.payment_mode },
       });
-      return { receipt: rcpt as string, amount: form.amount, student: selected.full_name };
+      const reference =
+        form.payment_mode === "cheque" || form.payment_mode === "dd"
+          ? `${form.cheque_bank || ""} ${form.cheque_number || ""}`.trim()
+          : form.payment_mode === "upi"
+            ? form.upi_reference || ""
+            : form.payment_mode === "card"
+              ? form.card_last4
+                ? `**** ${form.card_last4}`
+                : ""
+              : "";
+      const totalFee = totals.total;
+      const totalPaidAfter = totals.paid + Number(form.amount || 0);
+      return {
+        receipt: rcpt as string,
+        amount: Number(form.amount || 0),
+        student: selected.full_name,
+        admissionNumber: selected.admission_number,
+        course: selected.courses?.name || "",
+        mode: form.payment_mode,
+        reference,
+        paidAt: new Date().toISOString(),
+        totalFee,
+        totalPaid: totalPaidAfter,
+        balance: Math.max(0, totalFee - totalPaidAfter),
+        installmentNo: payInst.installment_no,
+      };
     },
     onSuccess: (r) => {
       toast.success(`Receipt ${r.receipt} generated`);
-      setLastReceipt({ no: r.receipt, student: r.student, amount: r.amount });
+      setLastReceipt({
+        no: r.receipt,
+        student: r.student,
+        admissionNumber: r.admissionNumber,
+        course: r.course,
+        amount: r.amount,
+        mode: r.mode,
+        reference: r.reference,
+        paidAt: r.paidAt,
+        totalFee: r.totalFee,
+        totalPaid: r.totalPaid,
+        balance: r.balance,
+        installmentNo: r.installmentNo,
+      });
       setPayInst(null);
       qc.invalidateQueries({ queryKey: ["collect", "installments"] });
       qc.invalidateQueries({ queryKey: ["dash"] });
@@ -424,17 +476,61 @@ function Page() {
       />
 
       <Dialog open={!!lastReceipt} onOpenChange={(o) => !o && setLastReceipt(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-success" /> Payment recorded</DialogTitle>
             <DialogDescription>Receipt has been generated and the audit log updated.</DialogDescription>
           </DialogHeader>
-          <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
-            <Row k="Receipt #" v={<span className="font-mono">{lastReceipt?.no}</span>} />
-            <Row k="Student" v={lastReceipt?.student || ""} />
-            <Row k="Amount" v={inr(lastReceipt?.amount || 0)} />
-          </div>
-          <DialogFooter>
+          {lastReceipt && (
+            <div id="receipt-print" className="rounded-md border border-border bg-card p-5 text-sm">
+              <div className="flex items-center gap-3 border-b border-border pb-3">
+                <img src={logoUrl} alt="Excellent NEET Academy Dharwad" className="h-14 w-14 object-contain" />
+                <div>
+                  <div className="text-base font-bold text-foreground">EXCELLENT NEET ACADEMY</div>
+                  <div className="text-xs text-muted-foreground">Dharwad</div>
+                  <div className="text-xs text-muted-foreground">Fee Receipt</div>
+                </div>
+                <div className="ml-auto text-right text-xs">
+                  <div className="font-mono font-semibold">#{lastReceipt.no}</div>
+                  <div className="text-muted-foreground">
+                    {new Date(lastReceipt.paidAt).toLocaleString("en-IN", {
+                      day: "2-digit", month: "short", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 py-3">
+                <Row k="Student" v={lastReceipt.student} />
+                <Row k="Adm. No" v={<span className="font-mono">{lastReceipt.admissionNumber}</span>} />
+                <Row k="Course" v={lastReceipt.course || "—"} />
+                <Row k="Installment" v={`#${lastReceipt.installmentNo}`} />
+                <Row k="Mode" v={modeLabel(lastReceipt.mode)} />
+                <Row k="Reference" v={lastReceipt.reference || "—"} />
+              </div>
+              <div className="space-y-1 border-t border-border pt-3">
+                <div className="flex justify-between text-base font-semibold">
+                  <span>Amount Received</span>
+                  <span>{inr(lastReceipt.amount)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Total Fee</span><span>{inr(lastReceipt.totalFee)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Total Paid (incl. this)</span><span>{inr(lastReceipt.totalPaid)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-medium">
+                  <span>Balance Due</span>
+                  <span className={lastReceipt.balance > 0 ? "text-destructive" : "text-success"}>{inr(lastReceipt.balance)}</span>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+                <span>Collected by: {fullName || "—"}</span>
+                <span>This is a computer-generated receipt.</span>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="print:hidden">
             <Button variant="outline" onClick={() => window.print()}>Print</Button>
             <Button onClick={() => setLastReceipt(null)}>Done</Button>
           </DialogFooter>
