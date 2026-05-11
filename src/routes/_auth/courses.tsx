@@ -144,7 +144,7 @@ const emptyCampus: CampusFormState = {
 function CampusesPanel() {
   const qc = useQueryClient();
   const { fullName, role } = useAuth();
-  const { setCampusId, campusId: activeCampusId } = useCampus();
+  const { setCampusId } = useCampus();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Campus | null>(null);
   const [form, setForm] = useState<CampusFormState>(emptyCampus);
