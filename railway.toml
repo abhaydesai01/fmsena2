@@ -1,8 +1,10 @@
 [build]
-builder = "nixpacks"
-buildCommand = "npm ci --cache /tmp/npm-cache && npm run build:railway"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "node node-server.mjs"
 healthcheckPath = "/"
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

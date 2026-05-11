@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
     "build:railway": "vite build --config vite.config.railway.ts",
-    "start": "node .output/server/index.mjs",
+    "start": "node node-server.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
