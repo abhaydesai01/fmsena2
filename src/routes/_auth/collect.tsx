@@ -476,17 +476,61 @@ function Page() {
       />
 
       <Dialog open={!!lastReceipt} onOpenChange={(o) => !o && setLastReceipt(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-success" /> Payment recorded</DialogTitle>
             <DialogDescription>Receipt has been generated and the audit log updated.</DialogDescription>
           </DialogHeader>
-          <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
-            <Row k="Receipt #" v={<span className="font-mono">{lastReceipt?.no}</span>} />
-            <Row k="Student" v={lastReceipt?.student || ""} />
-            <Row k="Amount" v={inr(lastReceipt?.amount || 0)} />
-          </div>
-          <DialogFooter>
+          {lastReceipt && (
+            <div id="receipt-print" className="rounded-md border border-border bg-card p-5 text-sm">
+              <div className="flex items-center gap-3 border-b border-border pb-3">
+                <img src={logoUrl} alt="Excellent NEET Academy Dharwad" className="h-14 w-14 object-contain" />
+                <div>
+                  <div className="text-base font-bold text-foreground">EXCELLENT NEET ACADEMY</div>
+                  <div className="text-xs text-muted-foreground">Dharwad</div>
+                  <div className="text-xs text-muted-foreground">Fee Receipt</div>
+                </div>
+                <div className="ml-auto text-right text-xs">
+                  <div className="font-mono font-semibold">#{lastReceipt.no}</div>
+                  <div className="text-muted-foreground">
+                    {new Date(lastReceipt.paidAt).toLocaleString("en-IN", {
+                      day: "2-digit", month: "short", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 py-3">
+                <Row k="Student" v={lastReceipt.student} />
+                <Row k="Adm. No" v={<span className="font-mono">{lastReceipt.admissionNumber}</span>} />
+                <Row k="Course" v={lastReceipt.course || "—"} />
+                <Row k="Installment" v={`#${lastReceipt.installmentNo}`} />
+                <Row k="Mode" v={modeLabel(lastReceipt.mode)} />
+                <Row k="Reference" v={lastReceipt.reference || "—"} />
+              </div>
+              <div className="space-y-1 border-t border-border pt-3">
+                <div className="flex justify-between text-base font-semibold">
+                  <span>Amount Received</span>
+                  <span>{inr(lastReceipt.amount)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Total Fee</span><span>{inr(lastReceipt.totalFee)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Total Paid (incl. this)</span><span>{inr(lastReceipt.totalPaid)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-medium">
+                  <span>Balance Due</span>
+                  <span className={lastReceipt.balance > 0 ? "text-destructive" : "text-success"}>{inr(lastReceipt.balance)}</span>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+                <span>Collected by: {fullName || "—"}</span>
+                <span>This is a computer-generated receipt.</span>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="print:hidden">
             <Button variant="outline" onClick={() => window.print()}>Print</Button>
             <Button onClick={() => setLastReceipt(null)}>Done</Button>
           </DialogFooter>
