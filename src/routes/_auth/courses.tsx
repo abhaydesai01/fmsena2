@@ -148,6 +148,7 @@ function CampusesPanel() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Campus | null>(null);
   const [form, setForm] = useState<CampusFormState>(emptyCampus);
+  const [deleteTarget, setDeleteTarget] = useState<Campus | null>(null);
 
   const campuses = useQuery({
     queryKey: ["campuses-manage"],
@@ -266,6 +267,46 @@ function CampusesPanel() {
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Failed"),
   });
 
+  const deleteCampus = useMutation({
+    mutationFn: async (c: Campus) => {
+      // Block deletion if any courses, batches, or students are attached
+      const [coursesRes, batchesRes, studentsRes] = await Promise.all([
+        supabase.from("courses").select("id", { count: "exact", head: true }).eq("campus_id", c.id),
+        supabase.from("batches").select("id", { count: "exact", head: true }).eq("campus_id", c.id),
+        supabase.from("students").select("id", { count: "exact", head: true }).eq("campus_id", c.id),
+      ]);
+      if (coursesRes.error) throw coursesRes.error;
+      if (batchesRes.error) throw batchesRes.error;
+      if (studentsRes.error) throw studentsRes.error;
+      const courses = coursesRes.count || 0;
+      const batches = batchesRes.count || 0;
+      const students = studentsRes.count || 0;
+      if (courses + batches + students > 0) {
+        throw new Error(
+          `Cannot delete: ${courses} course(s), ${batches} batch(es), ${students} student(s) attached. Remove or reassign them first.`,
+        );
+      }
+      const { error } = await supabase.from("campuses").delete().eq("id", c.id);
+      if (error) throw error;
+      await logAudit({
+        actorName: fullName || "—",
+        actorRole: role,
+        action: "delete",
+        entityType: "campus",
+        entityId: c.id,
+        oldValue: c,
+        newValue: null,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Campus deleted");
+      setDeleteTarget(null);
+      qc.invalidateQueries({ queryKey: ["campuses-manage"] });
+      qc.invalidateQueries({ queryKey: ["campuses-all"] });
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "Delete failed"),
+  });
+
   const list = campuses.data || [];
 
   return (
@@ -351,6 +392,15 @@ function CampusesPanel() {
                         >
                           <Power className="h-4 w-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(c)}
+                          title="Delete campus"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -419,6 +469,31 @@ function CampusesPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campus?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{deleteTarget?.name}</strong>. Deletion is only
+              allowed when no courses, batches, or students are attached to this campus.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) deleteCampus.mutate(deleteTarget);
+              }}
+              disabled={deleteCampus.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteCampus.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
