@@ -328,14 +328,45 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: "a
               </Select>
             </Field>
             <Field label="Batch *">
-              <Select value={profile.batch_id} onValueChange={(v) => setProfile({ ...profile, batch_id: v })} disabled={!profile.course_id}>
-                <SelectTrigger><SelectValue placeholder={profile.course_id ? "Select batch" : "Pick course first"} /></SelectTrigger>
-                <SelectContent>
-                  {batches.data?.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>{b.name} {b.timing ? `· ${b.timing}` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={profile.batch_id} onValueChange={(v) => setProfile({ ...profile, batch_id: v })} disabled={!profile.course_id || (batches.data?.length ?? 0) === 0}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={
+                      !profile.course_id ? "Pick course first"
+                        : (batches.data?.length ?? 0) === 0 ? "No batches — create one"
+                        : "Select batch"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {batches.data?.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>{b.name} {b.timing ? `· ${b.timing}` : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {profile.course_id && (batches.data?.length ?? 0) === 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      if (!campusId) return;
+                      const { data, error } = await supabase.from("batches").insert({
+                        course_id: profile.course_id,
+                        campus_id: campusId,
+                        name: "Default Batch",
+                        timing: "",
+                        capacity: 50,
+                        status: "active",
+                      }).select("*").single();
+                      if (error) { toast.error(error.message); return; }
+                      await qc.invalidateQueries({ queryKey: ["enroll", "batches", profile.course_id, campusId] });
+                      setProfile((p) => ({ ...p, batch_id: data.id }));
+                      toast.success("Default batch created");
+                    }}
+                  >
+                    + Create
+                  </Button>
+                )}
+              </div>
             </Field>
 
             <div className="flex items-center justify-between rounded-md border border-border p-3 md:col-span-1">
