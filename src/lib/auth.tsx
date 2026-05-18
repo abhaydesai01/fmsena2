@@ -1,25 +1,30 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getSessionFn, signInFn, signUpFn, signOutFn, type SessionUser } from "@/fns/auth";
-
-export type Role = "admin" | "cashier";
-
-export function roleLabel(r: Role | null | undefined): string {
-  if (r === "admin") return "Admin";
-  if (r === "cashier") return "Accountant";
-  return "—";
-}
+import {
+  hasPermission as can,
+  hasRole as hasAnyRole,
+  roleLabel,
+  type AppRole,
+  type PrivilegeKey,
+  type Privileges,
+} from "@/lib/permissions";
+export { roleLabel } from "@/lib/permissions";
 
 export type Session = SessionUser;
 
 interface AuthContextValue {
   session: Session | null;
   user: { id: string; email: string } | null;
-  role: Role | null;
+  role: AppRole | null;
+  privileges: Privileges | null;
+  forcePasswordReset: boolean;
   fullName: string;
   loading: boolean;
   isAdmin: boolean;
-  isCashier: boolean;
   isAccountant: boolean;
+  isEnrollmentOfficer: boolean;
+  hasPermission: (permission: PrivilegeKey) => boolean;
+  hasRole: (roles: AppRole[]) => boolean;
   signIn: (email: string, password: string, expectedRole?: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -63,11 +68,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session ? { id: session.userId, email: session.email } : null,
         role: session?.role ?? null,
+        privileges: session?.privileges ?? null,
+        forcePasswordReset: Boolean(session?.forcePasswordReset),
         fullName: session?.fullName ?? "",
         loading,
-        isAdmin: session?.role === "admin",
-        isCashier: session?.role === "cashier",
-        isAccountant: session?.role === "cashier",
+        isAdmin: session?.role === "ADMIN",
+        isAccountant: session?.role === "ACCOUNTANT",
+        isEnrollmentOfficer: session?.role === "ENROLLMENT_OFFICER",
+        hasPermission: (permission) =>
+          can(session ? { role: session.role, privileges: session.privileges } : null, permission),
+        hasRole: (roles) =>
+          hasAnyRole(
+            session ? { role: session.role, privileges: session.privileges } : null,
+            roles,
+          ),
         signIn,
         signUp,
         signOut,

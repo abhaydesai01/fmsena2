@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { ObjectId } from "mongodb";
 import { getDb, toObj, toObjs, nextSequence, calcInstallmentStatus } from "./db";
 import { getSettingsFn } from "./settings";
+import { requirePermission } from "./security";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -10,14 +11,28 @@ async function attachCourseAndBatch(db: any, docs: any[]) {
   const courseIds = [...new Set(docs.map((d) => d.course_id).filter(Boolean))];
   const batchIds = [...new Set(docs.map((d) => d.batch_id).filter(Boolean))];
 
-  const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+  const safeOId = (id: string) => {
+    try {
+      return new ObjectId(id);
+    } catch {
+      return id as any;
+    }
+  };
 
   const [courses, batches] = await Promise.all([
     courseIds.length
-      ? db.collection("courses").find({ _id: { $in: courseIds.map(safeOId) } }).project({ name: 1, gross_fee: 1 }).toArray()
+      ? db
+          .collection("courses")
+          .find({ _id: { $in: courseIds.map(safeOId) } })
+          .project({ name: 1, gross_fee: 1 })
+          .toArray()
       : Promise.resolve([]),
     batchIds.length
-      ? db.collection("batches").find({ _id: { $in: batchIds.map(safeOId) } }).project({ name: 1, timing: 1 }).toArray()
+      ? db
+          .collection("batches")
+          .find({ _id: { $in: batchIds.map(safeOId) } })
+          .project({ name: 1, timing: 1 })
+          .toArray()
       : Promise.resolve([]),
   ]);
 
@@ -28,12 +43,14 @@ async function attachCourseAndBatch(db: any, docs: any[]) {
 
   return docs.map((d) => ({
     ...d,
-    courses: d.course_id && cMap[d.course_id]
-      ? { name: cMap[d.course_id].name, gross_fee: cMap[d.course_id].gross_fee }
-      : null,
-    batches: d.batch_id && bMap[d.batch_id]
-      ? { id: d.batch_id, name: bMap[d.batch_id].name, timing: bMap[d.batch_id].timing }
-      : null,
+    courses:
+      d.course_id && cMap[d.course_id]
+        ? { name: cMap[d.course_id].name, gross_fee: cMap[d.course_id].gross_fee }
+        : null,
+    batches:
+      d.batch_id && bMap[d.batch_id]
+        ? { id: d.batch_id, name: bMap[d.batch_id].name, timing: bMap[d.batch_id].timing }
+        : null,
   }));
 }
 
@@ -61,7 +78,13 @@ export const getStudentFn = createServerFn({ method: "GET" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
     const doc = await db.collection("students").findOne({ _id: safeOId(data.id) });
     if (!doc) return null;
     const withId = toObj(doc);
@@ -95,12 +118,21 @@ export const searchStudentsFn = createServerFn({ method: "GET" })
 export const updateStudentFn = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; updates: Record<string, any> }) => d)
   .handler(async ({ data }) => {
+    await requirePermission("canEditStudentProfile");
     const db = await getDb();
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
-    await db.collection("students").updateOne(
-      { _id: safeOId(data.id) },
-      { $set: { ...data.updates, updated_at: new Date().toISOString() } },
-    );
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
+    await db
+      .collection("students")
+      .updateOne(
+        { _id: safeOId(data.id) },
+        { $set: { ...data.updates, updated_at: new Date().toISOString() } },
+      );
     return { ok: true };
   });
 
@@ -109,6 +141,7 @@ export const updateStudentFn = createServerFn({ method: "POST" })
 export const nextAdmissionNumberFn = createServerFn({ method: "GET" })
   .inputValidator((d: { year: string }) => d)
   .handler(async ({ data }) => {
+    await requirePermission("canEnrollStudents");
     const db = await getDb();
     const settings = (await getSettingsFn()) as any;
     const prefix = settings?.admission_prefix || "ENA";
@@ -129,6 +162,7 @@ export const createEnrollmentFn = createServerFn({ method: "POST" })
     }) => d,
   )
   .handler(async ({ data }) => {
+    await requirePermission("canEnrollStudents");
     const db = await getDb();
     const now = new Date().toISOString();
 
@@ -211,9 +245,7 @@ export const getFeeAssignmentFn = createServerFn({ method: "GET" })
   .inputValidator((d: { studentId: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
-    const doc = await db
-      .collection("fee_assignments")
-      .findOne({ student_id: data.studentId });
+    const doc = await db.collection("fee_assignments").findOne({ student_id: data.studentId });
     return doc ? toObj(doc) : null;
   });
 
@@ -260,7 +292,13 @@ export const getTransfersFn = createServerFn({ method: "GET" })
       ]),
     ];
     if (batchIds.length) {
-      const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+      const safeOId = (id: string) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return id as any;
+        }
+      };
       const batches = await db
         .collection("batches")
         .find({ _id: { $in: batchIds.map(safeOId) } })
@@ -307,14 +345,26 @@ export const updateInstallmentAmountFn = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; amount: number }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
     const inst = await db.collection("installments").findOne({ _id: safeOId(data.id) });
     if (!inst) throw new Error("Installment not found");
-    const newStatus = calcInstallmentStatus(data.amount, Number(inst.amount_paid), inst.due_date as string);
-    await db.collection("installments").updateOne(
-      { _id: safeOId(data.id) },
-      { $set: { amount: data.amount, status: newStatus, updated_at: new Date().toISOString() } },
+    const newStatus = calcInstallmentStatus(
+      data.amount,
+      Number(inst.amount_paid),
+      inst.due_date as string,
     );
+    await db
+      .collection("installments")
+      .updateOne(
+        { _id: safeOId(data.id) },
+        { $set: { amount: data.amount, status: newStatus, updated_at: new Date().toISOString() } },
+      );
     return { ok: true };
   });
 
@@ -357,11 +407,16 @@ export const createTransferFn = createServerFn({ method: "POST" })
     if (class_year_update !== undefined) studentUpdate.class_year = class_year_update;
     if (course_id_update !== undefined) studentUpdate.course_id = course_id_update;
 
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
-    await db.collection("students").updateOne(
-      { _id: safeOId(student_id) },
-      { $set: studentUpdate },
-    );
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
+    await db
+      .collection("students")
+      .updateOne({ _id: safeOId(student_id) }, { $set: studentUpdate });
 
     // Insert transfer record
     await db.collection("student_transfers").insertOne({
@@ -388,12 +443,21 @@ export const cancelConcessionFn = createServerFn({ method: "POST" })
     }) => d,
   )
   .handler(async ({ data }) => {
+    await requirePermission("canCancelConcession");
     const db = await getDb();
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
     const now = new Date().toISOString();
 
     // Update fee assignment
-    const fa = await db.collection("fee_assignments").findOne({ _id: safeOId(data.fee_assignment_id) });
+    const fa = await db
+      .collection("fee_assignments")
+      .findOne({ _id: safeOId(data.fee_assignment_id) });
     if (!fa) throw new Error("Fee assignment not found");
 
     await db.collection("fee_assignments").updateOne(
@@ -416,9 +480,7 @@ export const cancelConcessionFn = createServerFn({ method: "POST" })
       .sort({ installment_no: 1 })
       .toArray();
 
-    const nextUnpaid = installments.find(
-      (i) => Number(i.amount) - Number(i.amount_paid) > 0,
-    );
+    const nextUnpaid = installments.find((i) => Number(i.amount) - Number(i.amount_paid) > 0);
     if (nextUnpaid) {
       const newAmount = Number(nextUnpaid.amount) + data.cancelled_amount;
       const newStatus = calcInstallmentStatus(
@@ -426,10 +488,12 @@ export const cancelConcessionFn = createServerFn({ method: "POST" })
         Number(nextUnpaid.amount_paid),
         nextUnpaid.due_date as string,
       );
-      await db.collection("installments").updateOne(
-        { _id: nextUnpaid._id },
-        { $set: { amount: newAmount, status: newStatus, updated_at: now } },
-      );
+      await db
+        .collection("installments")
+        .updateOne(
+          { _id: nextUnpaid._id },
+          { $set: { amount: newAmount, status: newStatus, updated_at: now } },
+        );
     }
 
     // Insert cancellation record
@@ -443,7 +507,100 @@ export const cancelConcessionFn = createServerFn({ method: "POST" })
       performed_by: data.performed_by,
       performed_by_name: data.performed_by_name,
       created_at: now,
+      revoked_at: null,
+      revoked_by: null,
+      revoked_by_name: null,
+      revocation_reason: null,
     });
+
+    return { ok: true };
+  });
+
+export const revokeConcessionCancellationFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: {
+      concessionCancelId: string;
+      reason: string | null;
+      performed_by: string | null;
+      performed_by_name: string;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    await requirePermission("canRevokeConcessionCancellation");
+    const db = await getDb();
+    const now = new Date().toISOString();
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
+
+    const cancelRecord = await db
+      .collection("concession_cancellations")
+      .findOne({ _id: safeOId(data.concessionCancelId) });
+    if (!cancelRecord) throw new Error("Concession cancellation record not found");
+    if (cancelRecord.revoked_at) throw new Error("Cancellation already revoked");
+
+    const cancelledAmount = Number(cancelRecord.cancelled_amount || 0);
+    if (cancelledAmount <= 0) throw new Error("Invalid cancellation amount");
+
+    const feeAssignmentId = cancelRecord.fee_assignment_id as string;
+    const feeAssignment = await db
+      .collection("fee_assignments")
+      .findOne({ _id: safeOId(feeAssignmentId) });
+    if (!feeAssignment) throw new Error("Fee assignment not found");
+
+    const discountAmount = Number(feeAssignment.discount_amount || 0);
+    const netPayable = Number(feeAssignment.net_payable || 0);
+    const concessionCancelledAmount = Number(feeAssignment.concession_cancelled_amount || 0);
+
+    await db.collection("fee_assignments").updateOne(
+      { _id: safeOId(feeAssignmentId) },
+      {
+        $set: {
+          discount_amount: discountAmount + cancelledAmount,
+          net_payable: Math.max(0, netPayable - cancelledAmount),
+          concession_cancelled_amount: Math.max(0, concessionCancelledAmount - cancelledAmount),
+          updated_at: now,
+        },
+      },
+    );
+
+    const installments = await db
+      .collection("installments")
+      .find({ fee_assignment_id: feeAssignmentId })
+      .sort({ installment_no: 1 })
+      .toArray();
+    const nextUnpaid = installments.find((i) => Number(i.amount) - Number(i.amount_paid) > 0);
+    if (nextUnpaid) {
+      const nextAmount = Math.max(0, Number(nextUnpaid.amount) - cancelledAmount);
+      const nextStatus = calcInstallmentStatus(
+        nextAmount,
+        Number(nextUnpaid.amount_paid),
+        nextUnpaid.due_date as string,
+      );
+      await db
+        .collection("installments")
+        .updateOne(
+          { _id: nextUnpaid._id },
+          { $set: { amount: nextAmount, status: nextStatus, updated_at: now } },
+        );
+    }
+
+    await db.collection("concession_cancellations").updateOne(
+      { _id: safeOId(data.concessionCancelId) },
+      {
+        $set: {
+          revoked_at: now,
+          revoked_by: data.performed_by,
+          revoked_by_name: data.performed_by_name,
+          revocation_reason: data.reason ?? null,
+          updated_at: now,
+        },
+      },
+    );
 
     return { ok: true };
   });
@@ -469,7 +626,13 @@ export const upgradePlanFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = await getDb();
-    const safeOId = (id: string) => { try { return new ObjectId(id); } catch { return id as any; } };
+    const safeOId = (id: string) => {
+      try {
+        return new ObjectId(id);
+      } catch {
+        return id as any;
+      }
+    };
     const now = new Date().toISOString();
 
     // Delete unpaid installments
@@ -500,10 +663,12 @@ export const upgradePlanFn = createServerFn({ method: "POST" })
     }
 
     // Update fee assignment plan_kind
-    await db.collection("fee_assignments").updateOne(
-      { _id: safeOId(data.fee_assignment_id) },
-      { $set: { plan_kind: data.to_plan, updated_at: now } },
-    );
+    await db
+      .collection("fee_assignments")
+      .updateOne(
+        { _id: safeOId(data.fee_assignment_id) },
+        { $set: { plan_kind: data.to_plan, updated_at: now } },
+      );
 
     // Insert plan upgrade record
     await db.collection("plan_upgrades").insertOne({
@@ -523,9 +688,7 @@ export const upgradePlanFn = createServerFn({ method: "POST" })
 // ── browse (for collect page) ─────────────────────────────────────────────────
 
 export const getBrowseStudentsFn = createServerFn({ method: "GET" })
-  .inputValidator(
-    (d: { courseId?: string; studentStatus?: string }) => d,
-  )
+  .inputValidator((d: { courseId?: string; studentStatus?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
     const filter: Record<string, any> = {};

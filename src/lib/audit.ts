@@ -1,8 +1,9 @@
 import { logAuditFn } from "@/fns/audit";
+import type { AppRole } from "@/lib/permissions";
 
 export async function logAudit(opts: {
   actorName: string;
-  actorRole: "admin" | "cashier" | null;
+  actorRole: AppRole | null;
   action: string;
   entityType: string;
   entityId?: string | null;

@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthUsersRouteImport } from './routes/_auth/users'
 import { Route as AuthStudentsRouteImport } from './routes/_auth/students'
 import { Route as AuthSettingsRouteImport } from './routes/_auth/settings'
+import { Route as AuthResetPasswordRouteImport } from './routes/_auth/reset-password'
 import { Route as AuthReportsRouteImport } from './routes/_auth/reports'
 import { Route as AuthEnrollRouteImport } from './routes/_auth/enroll'
 import { Route as AuthDefaultersRouteImport } from './routes/_auth/defaulters'
@@ -37,6 +39,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthUsersRoute = AuthUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthStudentsRoute = AuthStudentsRouteImport.update({
   id: '/students',
   path: '/students',
@@ -45,6 +52,11 @@ const AuthStudentsRoute = AuthStudentsRouteImport.update({
 const AuthSettingsRoute = AuthSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthReportsRoute = AuthReportsRouteImport.update({
@@ -98,8 +110,10 @@ export interface FileRoutesByFullPath {
   '/defaulters': typeof AuthDefaultersRoute
   '/enroll': typeof AuthEnrollRoute
   '/reports': typeof AuthReportsRoute
+  '/reset-password': typeof AuthResetPasswordRoute
   '/settings': typeof AuthSettingsRoute
   '/students': typeof AuthStudentsRoute
+  '/users': typeof AuthUsersRoute
   '/students/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRoutesByTo {
@@ -112,8 +126,10 @@ export interface FileRoutesByTo {
   '/defaulters': typeof AuthDefaultersRoute
   '/enroll': typeof AuthEnrollRoute
   '/reports': typeof AuthReportsRoute
+  '/reset-password': typeof AuthResetPasswordRoute
   '/settings': typeof AuthSettingsRoute
   '/students': typeof AuthStudentsRoute
+  '/users': typeof AuthUsersRoute
   '/students/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRoutesById {
@@ -128,8 +144,10 @@ export interface FileRoutesById {
   '/_auth/defaulters': typeof AuthDefaultersRoute
   '/_auth/enroll': typeof AuthEnrollRoute
   '/_auth/reports': typeof AuthReportsRoute
+  '/_auth/reset-password': typeof AuthResetPasswordRoute
   '/_auth/settings': typeof AuthSettingsRoute
   '/_auth/students': typeof AuthStudentsRoute
+  '/_auth/users': typeof AuthUsersRoute
   '/_auth/students_/$studentId': typeof AuthStudentsStudentIdRoute
 }
 export interface FileRouteTypes {
@@ -144,8 +162,10 @@ export interface FileRouteTypes {
     | '/defaulters'
     | '/enroll'
     | '/reports'
+    | '/reset-password'
     | '/settings'
     | '/students'
+    | '/users'
     | '/students/$studentId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -158,8 +178,10 @@ export interface FileRouteTypes {
     | '/defaulters'
     | '/enroll'
     | '/reports'
+    | '/reset-password'
     | '/settings'
     | '/students'
+    | '/users'
     | '/students/$studentId'
   id:
     | '__root__'
@@ -173,8 +195,10 @@ export interface FileRouteTypes {
     | '/_auth/defaulters'
     | '/_auth/enroll'
     | '/_auth/reports'
+    | '/_auth/reset-password'
     | '/_auth/settings'
     | '/_auth/students'
+    | '/_auth/users'
     | '/_auth/students_/$studentId'
   fileRoutesById: FileRoutesById
 }
@@ -207,6 +231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_auth/users': {
+      id: '/_auth/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof AuthUsersRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/students': {
       id: '/_auth/students'
       path: '/students'
@@ -219,6 +250,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthSettingsRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/reset-password': {
+      id: '/_auth/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof AuthRoute
     }
     '/_auth/reports': {
@@ -288,8 +326,10 @@ interface AuthRouteChildren {
   AuthDefaultersRoute: typeof AuthDefaultersRoute
   AuthEnrollRoute: typeof AuthEnrollRoute
   AuthReportsRoute: typeof AuthReportsRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSettingsRoute: typeof AuthSettingsRoute
   AuthStudentsRoute: typeof AuthStudentsRoute
+  AuthUsersRoute: typeof AuthUsersRoute
   AuthStudentsStudentIdRoute: typeof AuthStudentsStudentIdRoute
 }
 
@@ -301,8 +341,10 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthDefaultersRoute: AuthDefaultersRoute,
   AuthEnrollRoute: AuthEnrollRoute,
   AuthReportsRoute: AuthReportsRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSettingsRoute: AuthSettingsRoute,
   AuthStudentsRoute: AuthStudentsRoute,
+  AuthUsersRoute: AuthUsersRoute,
   AuthStudentsStudentIdRoute: AuthStudentsStudentIdRoute,
 }
 

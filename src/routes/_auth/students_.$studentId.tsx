@@ -10,20 +10,48 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ArrowLeftRight, ArrowUpRight, ChevronLeft, FileText, Upload, History, AlertTriangle, TrendingUp, Pencil, Save, X, Receipt } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ArrowUpRight,
+  ChevronLeft,
+  FileText,
+  Upload,
+  History,
+  AlertTriangle,
+  TrendingUp,
+  Pencil,
+  Save,
+  X,
+  Receipt,
+} from "lucide-react";
 import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { PLAN_LABEL, PLAN_NEXT, PLAN_MONTHS, evenSplit, type PlanKind } from "@/lib/installments";
+import type { AppRole } from "@/lib/permissions";
 import {
   getStudentFn,
   getInstallmentsFn,
@@ -38,6 +66,7 @@ import {
   updateInstallmentAmountFn,
   createTransferFn,
   cancelConcessionFn,
+  revokeConcessionCancellationFn,
   upgradePlanFn,
 } from "@/fns/students";
 import { getCoursesFn, getBatchesFn } from "@/fns/courses";
@@ -46,7 +75,7 @@ export const Route = createFileRoute("/_auth/students_/$studentId")({ component:
 
 function Page() {
   const { studentId } = Route.useParams();
-  const { isAdmin, fullName, role, user } = useAuth();
+  const { isAdmin, fullName, role, user, hasPermission } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [transferOpen, setTransferOpen] = useState(false);
@@ -120,8 +149,11 @@ function Page() {
         },
       });
       await logAudit({
-        actorName: fullName, actorRole: role,
-        action: "upload_document", entityType: "student", entityId: studentId,
+        actorName: fullName,
+        actorRole: role,
+        action: "upload_document",
+        entityType: "student",
+        entityId: studentId,
         newValue: { label, size: file.size },
       });
     },
@@ -137,28 +169,38 @@ function Page() {
     return (
       <div className="space-y-4">
         <PageHeader title="Student not found" />
-        <Link to="/students" className="text-sm underline">Back to students</Link>
+        <Link to="/students" className="text-sm underline">
+          Back to students
+        </Link>
       </div>
     );
   }
 
   const s = student.data;
-  const totalDue = (installments.data || []).reduce((a, i) => a + Number(i.amount) - Number(i.amount_paid), 0);
+  const totalDue = (installments.data || []).reduce(
+    (a, i) => a + Number(i.amount) - Number(i.amount_paid),
+    0,
+  );
   const totalPaid = (installments.data || []).reduce((a, i) => a + Number(i.amount_paid), 0);
   const today = new Date().toISOString().slice(0, 10);
   const hasOverdue = (installments.data || []).some(
     (i: any) => Number(i.amount) - Number(i.amount_paid) > 0 && i.due_date < today,
   );
   const fa = feeAssignment.data as any;
-  const currentPlan: PlanKind | null = fa?.plan_kind && PLAN_LABEL[fa.plan_kind as PlanKind] ? (fa.plan_kind as PlanKind) : null;
+  const currentPlan: PlanKind | null =
+    fa?.plan_kind && PLAN_LABEL[fa.plan_kind as PlanKind] ? (fa.plan_kind as PlanKind) : null;
   const hasConcession = fa && Number(fa.discount_amount || 0) > 0;
-  const showConcessionBanner = hasOverdue && hasConcession && Number(fa.concession_cancelled_amount || 0) === 0;
+  const showConcessionBanner =
+    hasOverdue && hasConcession && Number(fa.concession_cancelled_amount || 0) === 0;
   const showUpgradeBanner = hasOverdue && currentPlan && PLAN_NEXT[currentPlan];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <Link to="/students" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/students"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ChevronLeft className="h-4 w-4" /> Back to students
         </Link>
         {s.status === "active" && (
@@ -174,168 +216,248 @@ function Page() {
       <PageHeader
         title={s.full_name}
         description={`${s.admission_number} · ${s.courses?.name || "—"} · ${s.batches?.name || "—"}`}
-        actions={isAdmin ? (
-          <>
-            <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>
-              <ArrowLeftRight className="h-4 w-4" /> Transfer Batch
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setPromoteOpen(true)}>
-              <ArrowUpRight className="h-4 w-4" /> Promote Class
-            </Button>
-            {currentPlan && PLAN_NEXT[currentPlan] && (
-              <Button variant="outline" size="sm" onClick={() => setUpgradePlanOpen(true)}>
-                <TrendingUp className="h-4 w-4" /> Upgrade Plan
-              </Button>
-            )}
-            {hasConcession && Number(fa.concession_cancelled_amount || 0) === 0 && (
-              <Button variant="outline" size="sm" onClick={() => setCancelConcessionOpen(true)}>
-                <X className="h-4 w-4" /> Cancel Concession
-              </Button>
-            )}
-          </>
-        ) : undefined}
+        actions={
+          isAdmin || hasPermission("canCancelConcession") ? (
+            <>
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>
+                  <ArrowLeftRight className="h-4 w-4" /> Transfer Batch
+                </Button>
+              )}
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={() => setPromoteOpen(true)}>
+                  <ArrowUpRight className="h-4 w-4" /> Promote Class
+                </Button>
+              )}
+              {isAdmin && currentPlan && PLAN_NEXT[currentPlan] && (
+                <Button variant="outline" size="sm" onClick={() => setUpgradePlanOpen(true)}>
+                  <TrendingUp className="h-4 w-4" /> Upgrade Plan
+                </Button>
+              )}
+              {hasPermission("canCancelConcession") &&
+                hasConcession &&
+                Number(fa.concession_cancelled_amount || 0) === 0 && (
+                  <Button variant="outline" size="sm" onClick={() => setCancelConcessionOpen(true)}>
+                    <X className="h-4 w-4" /> Cancel Concession
+                  </Button>
+                )}
+            </>
+          ) : undefined
+        }
       />
 
-      {(showConcessionBanner || showUpgradeBanner) && isAdmin && (
-        <div className="rounded-md border border-warning/40 bg-warning/10 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-            <div className="flex-1 text-sm">
-              <div className="font-semibold text-foreground">Overdue payment detected</div>
-              <div className="mt-1 text-muted-foreground">
-                {showConcessionBanner && <>Consider cancelling the concession ({inr(Number(fa.discount_amount))}). </>}
-                {showUpgradeBanner && <>Consider upgrading from {PLAN_LABEL[currentPlan!]} to {PLAN_LABEL[PLAN_NEXT[currentPlan!]!]}.</>}
-              </div>
-              <div className="mt-2 flex gap-2">
-                {showConcessionBanner && (
-                  <Button size="sm" variant="outline" onClick={() => setCancelConcessionOpen(true)}>Cancel concession</Button>
-                )}
-                {showUpgradeBanner && (
-                  <Button size="sm" variant="outline" onClick={() => setUpgradePlanOpen(true)}>Upgrade plan</Button>
-                )}
+      {(showConcessionBanner || showUpgradeBanner) &&
+        (hasPermission("canCancelConcession") || isAdmin) && (
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+              <div className="flex-1 text-sm">
+                <div className="font-semibold text-foreground">Overdue payment detected</div>
+                <div className="mt-1 text-muted-foreground">
+                  {showConcessionBanner && (
+                    <>Consider cancelling the concession ({inr(Number(fa.discount_amount))}). </>
+                  )}
+                  {showUpgradeBanner && (
+                    <>
+                      Consider upgrading from {PLAN_LABEL[currentPlan!]} to{" "}
+                      {PLAN_LABEL[PLAN_NEXT[currentPlan!]!]}.
+                    </>
+                  )}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {showConcessionBanner && hasPermission("canCancelConcession") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setCancelConcessionOpen(true)}
+                    >
+                      Cancel concession
+                    </Button>
+                  )}
+                  {showUpgradeBanner && (
+                    <Button size="sm" variant="outline" onClick={() => setUpgradePlanOpen(true)}>
+                      Upgrade plan
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {currentPlan && (
         <div className="text-xs text-muted-foreground">
           Current plan: <strong className="text-foreground">{PLAN_LABEL[currentPlan]}</strong>
           {fa && Number(fa.concession_cancelled_amount || 0) > 0 && (
-            <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 text-destructive">Concession cancelled · {inr(fa.concession_cancelled_amount)}</span>
+            <span className="ml-2 rounded bg-destructive/10 px-1.5 py-0.5 text-destructive">
+              Concession cancelled · {inr(fa.concession_cancelled_amount)}
+            </span>
           )}
         </div>
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Total Paid</div><div className="text-2xl font-bold text-success">{inr(totalPaid)}</div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Outstanding</div><div className="text-2xl font-bold text-destructive">{inr(totalDue)}</div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Status</div><div className="mt-1"><StatusBadge status={s.status} /></div></CardContent></Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Total Paid</div>
+            <div className="text-2xl font-bold text-success">{inr(totalPaid)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Outstanding</div>
+            <div className="text-2xl font-bold text-destructive">{inr(totalDue)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Status</div>
+            <div className="mt-1">
+              <StatusBadge status={s.status} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Profile</CardTitle>
-          {isAdmin && !profileEdit && (
-            <Button size="sm" variant="outline" onClick={() => {
-              setProfileDraft({
-                full_name: s.full_name ?? "",
-                mobile: s.mobile ?? "",
-                email: s.email ?? "",
-                aadhaar_number: s.aadhaar_number ?? "",
-                date_of_birth: s.date_of_birth ?? "",
-                gender: s.gender ?? "",
-                permanent_address: s.permanent_address ?? "",
-                current_address: s.current_address ?? "",
-                father_name: s.father_name ?? "",
-                father_mobile: s.father_mobile ?? "",
-                father_occupation: s.father_occupation ?? "",
-                mother_name: s.mother_name ?? "",
-                mother_mobile: s.mother_mobile ?? "",
-                emergency_name: s.emergency_name ?? "",
-                emergency_relation: s.emergency_relation ?? "",
-                emergency_mobile: s.emergency_mobile ?? "",
-                blood_group: (s as any).blood_group ?? "",
-                category: (s as any).category ?? "",
-                religion: (s as any).religion ?? "",
-                previous_school: s.previous_school ?? "",
-                previous_class: (s as any).previous_class ?? "",
-                board: s.board ?? "",
-                marks_10th: s.marks_10th ?? "",
-                marks_12th: s.marks_12th ?? "",
-                // NEET admission form fields
-                course_type: (s as any).course_type ?? "",
-                course_stream: (s as any).course_stream ?? "",
-                pan_number: (s as any).pan_number ?? "",
-                puc_hall_ticket_no: (s as any).puc_hall_ticket_no ?? "",
-                sslc_register_number: (s as any).sslc_register_number ?? "",
-                puc_total_percent: (s as any).puc_total_percent ?? "",
-                puc_pcmb_percent: (s as any).puc_pcmb_percent ?? "",
-                neet_marks_obtained: (s as any).neet_marks_obtained ?? "",
-                admission_type: (s as any).admission_type ?? "",
-                sub_caste_group: (s as any).sub_caste_group ?? "",
-                college_type: (s as any).college_type ?? "",
-                van_facility_required: (s as any).van_facility_required ?? false,
-                present_address_pincode: (s as any).present_address_pincode ?? "",
-                permanent_address_pincode: (s as any).permanent_address_pincode ?? "",
-                mobile_secondary: (s as any).mobile_secondary ?? "",
-                admission_place: (s as any).admission_place ?? "",
-                family_annual_income: (s as any).family_annual_income ?? "",
-              });
-              setProfileEdit(true);
-            }}>
+          {hasPermission("canEditStudentProfile") && !profileEdit && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setProfileDraft({
+                  full_name: s.full_name ?? "",
+                  mobile: s.mobile ?? "",
+                  email: s.email ?? "",
+                  aadhaar_number: s.aadhaar_number ?? "",
+                  date_of_birth: s.date_of_birth ?? "",
+                  gender: s.gender ?? "",
+                  permanent_address: s.permanent_address ?? "",
+                  current_address: s.current_address ?? "",
+                  father_name: s.father_name ?? "",
+                  father_mobile: s.father_mobile ?? "",
+                  father_occupation: s.father_occupation ?? "",
+                  mother_name: s.mother_name ?? "",
+                  mother_mobile: s.mother_mobile ?? "",
+                  emergency_name: s.emergency_name ?? "",
+                  emergency_relation: s.emergency_relation ?? "",
+                  emergency_mobile: s.emergency_mobile ?? "",
+                  blood_group: (s as any).blood_group ?? "",
+                  category: (s as any).category ?? "",
+                  religion: (s as any).religion ?? "",
+                  previous_school: s.previous_school ?? "",
+                  previous_class: (s as any).previous_class ?? "",
+                  board: s.board ?? "",
+                  marks_10th: s.marks_10th ?? "",
+                  marks_12th: s.marks_12th ?? "",
+                  // NEET admission form fields
+                  course_type: (s as any).course_type ?? "",
+                  course_stream: (s as any).course_stream ?? "",
+                  pan_number: (s as any).pan_number ?? "",
+                  puc_hall_ticket_no: (s as any).puc_hall_ticket_no ?? "",
+                  sslc_register_number: (s as any).sslc_register_number ?? "",
+                  puc_total_percent: (s as any).puc_total_percent ?? "",
+                  puc_pcmb_percent: (s as any).puc_pcmb_percent ?? "",
+                  neet_marks_obtained: (s as any).neet_marks_obtained ?? "",
+                  admission_type: (s as any).admission_type ?? "",
+                  sub_caste_group: (s as any).sub_caste_group ?? "",
+                  college_type: (s as any).college_type ?? "",
+                  van_facility_required: (s as any).van_facility_required ?? false,
+                  present_address_pincode: (s as any).present_address_pincode ?? "",
+                  permanent_address_pincode: (s as any).permanent_address_pincode ?? "",
+                  mobile_secondary: (s as any).mobile_secondary ?? "",
+                  admission_place: (s as any).admission_place ?? "",
+                  family_annual_income: (s as any).family_annual_income ?? "",
+                });
+                setProfileEdit(true);
+              }}
+            >
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
           )}
-          {isAdmin && profileEdit && (
+          {hasPermission("canEditStudentProfile") && profileEdit && (
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={profileSaving} onClick={() => { setProfileEdit(false); setProfileDraft({}); }}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={profileSaving}
+                onClick={() => {
+                  setProfileEdit(false);
+                  setProfileDraft({});
+                }}
+              >
                 <X className="h-3.5 w-3.5" /> Cancel
               </Button>
-              <Button size="sm" disabled={profileSaving} onClick={async () => {
-                // Mobile validation
-                if (!profileDraft.full_name?.trim()) { toast.error("Full name is required"); return; }
-                if (!profileDraft.mobile?.trim() || !/^\d{10}$/.test(profileDraft.mobile.trim())) { toast.error("Mobile must be 10 digits"); return; }
-                if (profileDraft.father_mobile && !/^\d{10}$/.test(profileDraft.father_mobile.trim())) { toast.error("Father mobile must be 10 digits"); return; }
-                if (!profileDraft.permanent_address?.trim()) { toast.error("Permanent address is required"); return; }
-
-                // Build diff
-                const diff: Record<string, { from: any; to: any }> = {};
-                const updates: Record<string, any> = {};
-                for (const [k, v] of Object.entries(profileDraft)) {
-                  const orig = (s as any)[k];
-                  const cleaned = typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v;
-                  if ((orig ?? null) !== (cleaned ?? null)) {
-                    diff[k] = { from: orig ?? null, to: cleaned ?? null };
-                    updates[k] = cleaned;
+              <Button
+                size="sm"
+                disabled={profileSaving}
+                onClick={async () => {
+                  // Mobile validation
+                  if (!profileDraft.full_name?.trim()) {
+                    toast.error("Full name is required");
+                    return;
                   }
-                }
-                if (Object.keys(updates).length === 0) {
-                  toast.info("No changes to save");
-                  setProfileEdit(false);
-                  return;
-                }
-                setProfileSaving(true);
-                try {
-                  await updateStudentFn({ data: { id: studentId, updates } });
-                } catch (e: any) {
+                  if (
+                    !profileDraft.mobile?.trim() ||
+                    !/^\d{10}$/.test(profileDraft.mobile.trim())
+                  ) {
+                    toast.error("Mobile must be 10 digits");
+                    return;
+                  }
+                  if (
+                    profileDraft.father_mobile &&
+                    !/^\d{10}$/.test(profileDraft.father_mobile.trim())
+                  ) {
+                    toast.error("Father mobile must be 10 digits");
+                    return;
+                  }
+                  if (!profileDraft.permanent_address?.trim()) {
+                    toast.error("Permanent address is required");
+                    return;
+                  }
+
+                  // Build diff
+                  const diff: Record<string, { from: any; to: any }> = {};
+                  const updates: Record<string, any> = {};
+                  for (const [k, v] of Object.entries(profileDraft)) {
+                    const orig = (s as any)[k];
+                    const cleaned = typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v;
+                    if ((orig ?? null) !== (cleaned ?? null)) {
+                      diff[k] = { from: orig ?? null, to: cleaned ?? null };
+                      updates[k] = cleaned;
+                    }
+                  }
+                  if (Object.keys(updates).length === 0) {
+                    toast.info("No changes to save");
+                    setProfileEdit(false);
+                    return;
+                  }
+                  setProfileSaving(true);
+                  try {
+                    await updateStudentFn({ data: { id: studentId, updates } });
+                  } catch (e: any) {
+                    setProfileSaving(false);
+                    toast.error(e?.message || "Failed to save");
+                    return;
+                  }
+                  await logAudit({
+                    actorName: fullName,
+                    actorRole: role,
+                    action: "edit_student_profile",
+                    entityType: "student",
+                    entityId: studentId,
+                    oldValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.from])),
+                    newValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.to])),
+                  });
                   setProfileSaving(false);
-                  toast.error(e?.message || "Failed to save");
-                  return;
-                }
-                await logAudit({
-                  actorName: fullName, actorRole: role,
-                  action: "edit_student_profile", entityType: "student", entityId: studentId,
-                  oldValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.from])),
-                  newValue: Object.fromEntries(Object.entries(diff).map(([k, v]) => [k, v.to])),
-                });
-                setProfileSaving(false);
-                setProfileEdit(false);
-                setProfileDraft({});
-                toast.success("Profile updated");
-                qc.invalidateQueries({ queryKey: ["student", studentId] });
-              }}>
+                  setProfileEdit(false);
+                  setProfileDraft({});
+                  toast.success("Profile updated");
+                  qc.invalidateQueries({ queryKey: ["student", studentId] });
+                }}
+              >
                 <Save className="h-3.5 w-3.5" /> {profileSaving ? "Saving…" : "Save"}
               </Button>
             </div>
@@ -344,47 +466,221 @@ function Page() {
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
           {profileEdit ? (
             <>
-              <EditField k="Full Name *" v={profileDraft.full_name} onChange={(x) => setProfileDraft((p) => ({ ...p, full_name: x }))} />
-              <EditField k="Mobile *" v={profileDraft.mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, mobile: x }))} />
-              <EditField k="Email" v={profileDraft.email} onChange={(x) => setProfileDraft((p) => ({ ...p, email: x }))} />
-              <EditField k="Aadhaar" v={profileDraft.aadhaar_number} onChange={(x) => setProfileDraft((p) => ({ ...p, aadhaar_number: x }))} />
-              <EditField k="DOB" type="date" v={profileDraft.date_of_birth} onChange={(x) => setProfileDraft((p) => ({ ...p, date_of_birth: x }))} />
-              <EditSelect k="Gender" v={profileDraft.gender} options={["male", "female", "other"]} onChange={(x) => setProfileDraft((p) => ({ ...p, gender: x }))} />
-              <EditField k="Blood Group" v={profileDraft.blood_group} onChange={(x) => setProfileDraft((p) => ({ ...p, blood_group: x }))} />
-              <EditField k="Category" v={profileDraft.category} onChange={(x) => setProfileDraft((p) => ({ ...p, category: x }))} />
-              <EditField k="Religion" v={profileDraft.religion} onChange={(x) => setProfileDraft((p) => ({ ...p, religion: x }))} />
-              <EditTextarea k="Permanent Address *" v={profileDraft.permanent_address} onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address: x }))} />
-              <EditTextarea k="Current Address" v={profileDraft.current_address} onChange={(x) => setProfileDraft((p) => ({ ...p, current_address: x }))} />
-              <EditField k="Father Name *" v={profileDraft.father_name} onChange={(x) => setProfileDraft((p) => ({ ...p, father_name: x }))} />
-              <EditField k="Father Mobile *" v={profileDraft.father_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, father_mobile: x }))} />
-              <EditField k="Father Occupation" v={profileDraft.father_occupation} onChange={(x) => setProfileDraft((p) => ({ ...p, father_occupation: x }))} />
-              <EditField k="Mother Name" v={profileDraft.mother_name} onChange={(x) => setProfileDraft((p) => ({ ...p, mother_name: x }))} />
-              <EditField k="Mother Mobile" v={profileDraft.mother_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, mother_mobile: x }))} />
-              <EditField k="Emergency Name" v={profileDraft.emergency_name} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_name: x }))} />
-              <EditField k="Emergency Relation" v={profileDraft.emergency_relation} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_relation: x }))} />
-              <EditField k="Emergency Mobile" v={profileDraft.emergency_mobile} onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_mobile: x }))} />
-              <EditField k="Previous School" v={profileDraft.previous_school} onChange={(x) => setProfileDraft((p) => ({ ...p, previous_school: x }))} />
-              <EditField k="Previous Class" v={profileDraft.previous_class} onChange={(x) => setProfileDraft((p) => ({ ...p, previous_class: x }))} />
-              <EditField k="Board" v={profileDraft.board} onChange={(x) => setProfileDraft((p) => ({ ...p, board: x }))} />
-              <EditField k="Marks 10th" v={profileDraft.marks_10th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_10th: x }))} />
-              <EditField k="Marks 12th" v={profileDraft.marks_12th} onChange={(x) => setProfileDraft((p) => ({ ...p, marks_12th: x }))} />
-              <EditSelect k="Course Type" v={profileDraft.course_type} options={["long_term", "crash_course"]} onChange={(x) => setProfileDraft((p) => ({ ...p, course_type: x }))} />
-              <EditSelect k="Course Stream" v={profileDraft.course_stream} options={["neet", "kcet"]} onChange={(x) => setProfileDraft((p) => ({ ...p, course_stream: x }))} />
-              <EditSelect k="College Type" v={profileDraft.college_type} options={["state_board", "cbse_board"]} onChange={(x) => setProfileDraft((p) => ({ ...p, college_type: x }))} />
-              <EditField k="PUC Hall Ticket No" v={profileDraft.puc_hall_ticket_no} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_hall_ticket_no: x }))} />
-              <EditField k="SSLC Register No" v={profileDraft.sslc_register_number} onChange={(x) => setProfileDraft((p) => ({ ...p, sslc_register_number: x }))} />
-              <EditField k="PUC Total %" v={profileDraft.puc_total_percent} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_total_percent: x }))} />
-              <EditField k="PUC PCMB %" v={profileDraft.puc_pcmb_percent} onChange={(x) => setProfileDraft((p) => ({ ...p, puc_pcmb_percent: x }))} />
-              <EditField k="NEET Marks Obtained" v={profileDraft.neet_marks_obtained} onChange={(x) => setProfileDraft((p) => ({ ...p, neet_marks_obtained: x }))} />
-              <EditSelect k="Admission Type" v={profileDraft.admission_type} options={["residential", "non_residential"]} onChange={(x) => setProfileDraft((p) => ({ ...p, admission_type: x }))} />
-              <EditSelect k="Sub Caste Group" v={profileDraft.sub_caste_group} options={["CA-I", "IIA", "IIB", "IIIA", "IIIB"]} onChange={(x) => setProfileDraft((p) => ({ ...p, sub_caste_group: x }))} />
-              <EditSelect k="Van Facility" v={String(profileDraft.van_facility_required)} options={["true", "false"]} onChange={(x) => setProfileDraft((p) => ({ ...p, van_facility_required: x === "true" }))} />
-              <EditField k="Present Address Pincode" v={profileDraft.present_address_pincode} onChange={(x) => setProfileDraft((p) => ({ ...p, present_address_pincode: x }))} />
-              <EditField k="Permanent Address Pincode" v={profileDraft.permanent_address_pincode} onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address_pincode: x }))} />
-              <EditField k="Mobile (Secondary)" v={profileDraft.mobile_secondary} onChange={(x) => setProfileDraft((p) => ({ ...p, mobile_secondary: x }))} />
-              <EditField k="PAN Number" v={profileDraft.pan_number} onChange={(x) => setProfileDraft((p) => ({ ...p, pan_number: x }))} />
-              <EditField k="Admission Place" v={profileDraft.admission_place} onChange={(x) => setProfileDraft((p) => ({ ...p, admission_place: x }))} />
-              <EditField k="Family Annual Income (₹)" v={profileDraft.family_annual_income} onChange={(x) => setProfileDraft((p) => ({ ...p, family_annual_income: x }))} />
+              <EditField
+                k="Full Name *"
+                v={profileDraft.full_name}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, full_name: x }))}
+              />
+              <EditField
+                k="Mobile *"
+                v={profileDraft.mobile}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, mobile: x }))}
+              />
+              <EditField
+                k="Email"
+                v={profileDraft.email}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, email: x }))}
+              />
+              <EditField
+                k="Aadhaar"
+                v={profileDraft.aadhaar_number}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, aadhaar_number: x }))}
+              />
+              <EditField
+                k="DOB"
+                type="date"
+                v={profileDraft.date_of_birth}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, date_of_birth: x }))}
+              />
+              <EditSelect
+                k="Gender"
+                v={profileDraft.gender}
+                options={["male", "female", "other"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, gender: x }))}
+              />
+              <EditField
+                k="Blood Group"
+                v={profileDraft.blood_group}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, blood_group: x }))}
+              />
+              <EditField
+                k="Category"
+                v={profileDraft.category}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, category: x }))}
+              />
+              <EditField
+                k="Religion"
+                v={profileDraft.religion}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, religion: x }))}
+              />
+              <EditTextarea
+                k="Permanent Address *"
+                v={profileDraft.permanent_address}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address: x }))}
+              />
+              <EditTextarea
+                k="Current Address"
+                v={profileDraft.current_address}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, current_address: x }))}
+              />
+              <EditField
+                k="Father Name *"
+                v={profileDraft.father_name}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, father_name: x }))}
+              />
+              <EditField
+                k="Father Mobile *"
+                v={profileDraft.father_mobile}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, father_mobile: x }))}
+              />
+              <EditField
+                k="Father Occupation"
+                v={profileDraft.father_occupation}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, father_occupation: x }))}
+              />
+              <EditField
+                k="Mother Name"
+                v={profileDraft.mother_name}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, mother_name: x }))}
+              />
+              <EditField
+                k="Mother Mobile"
+                v={profileDraft.mother_mobile}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, mother_mobile: x }))}
+              />
+              <EditField
+                k="Emergency Name"
+                v={profileDraft.emergency_name}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_name: x }))}
+              />
+              <EditField
+                k="Emergency Relation"
+                v={profileDraft.emergency_relation}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_relation: x }))}
+              />
+              <EditField
+                k="Emergency Mobile"
+                v={profileDraft.emergency_mobile}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, emergency_mobile: x }))}
+              />
+              <EditField
+                k="Previous School"
+                v={profileDraft.previous_school}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, previous_school: x }))}
+              />
+              <EditField
+                k="Previous Class"
+                v={profileDraft.previous_class}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, previous_class: x }))}
+              />
+              <EditField
+                k="Board"
+                v={profileDraft.board}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, board: x }))}
+              />
+              <EditField
+                k="Marks 10th"
+                v={profileDraft.marks_10th}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, marks_10th: x }))}
+              />
+              <EditField
+                k="Marks 12th"
+                v={profileDraft.marks_12th}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, marks_12th: x }))}
+              />
+              <EditSelect
+                k="Course Type"
+                v={profileDraft.course_type}
+                options={["long_term", "crash_course"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, course_type: x }))}
+              />
+              <EditSelect
+                k="Course Stream"
+                v={profileDraft.course_stream}
+                options={["neet", "kcet"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, course_stream: x }))}
+              />
+              <EditSelect
+                k="College Type"
+                v={profileDraft.college_type}
+                options={["state_board", "cbse_board"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, college_type: x }))}
+              />
+              <EditField
+                k="PUC Hall Ticket No"
+                v={profileDraft.puc_hall_ticket_no}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, puc_hall_ticket_no: x }))}
+              />
+              <EditField
+                k="SSLC Register No"
+                v={profileDraft.sslc_register_number}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, sslc_register_number: x }))}
+              />
+              <EditField
+                k="PUC Total %"
+                v={profileDraft.puc_total_percent}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, puc_total_percent: x }))}
+              />
+              <EditField
+                k="PUC PCMB %"
+                v={profileDraft.puc_pcmb_percent}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, puc_pcmb_percent: x }))}
+              />
+              <EditField
+                k="NEET Marks Obtained"
+                v={profileDraft.neet_marks_obtained}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, neet_marks_obtained: x }))}
+              />
+              <EditSelect
+                k="Admission Type"
+                v={profileDraft.admission_type}
+                options={["residential", "non_residential"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, admission_type: x }))}
+              />
+              <EditSelect
+                k="Sub Caste Group"
+                v={profileDraft.sub_caste_group}
+                options={["CA-I", "IIA", "IIB", "IIIA", "IIIB"]}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, sub_caste_group: x }))}
+              />
+              <EditSelect
+                k="Van Facility"
+                v={String(profileDraft.van_facility_required)}
+                options={["true", "false"]}
+                onChange={(x) =>
+                  setProfileDraft((p) => ({ ...p, van_facility_required: x === "true" }))
+                }
+              />
+              <EditField
+                k="Present Address Pincode"
+                v={profileDraft.present_address_pincode}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, present_address_pincode: x }))}
+              />
+              <EditField
+                k="Permanent Address Pincode"
+                v={profileDraft.permanent_address_pincode}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, permanent_address_pincode: x }))}
+              />
+              <EditField
+                k="Mobile (Secondary)"
+                v={profileDraft.mobile_secondary}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, mobile_secondary: x }))}
+              />
+              <EditField
+                k="PAN Number"
+                v={profileDraft.pan_number}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, pan_number: x }))}
+              />
+              <EditField
+                k="Admission Place"
+                v={profileDraft.admission_place}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, admission_place: x }))}
+              />
+              <EditField
+                k="Family Annual Income (₹)"
+                v={profileDraft.family_annual_income}
+                onChange={(x) => setProfileDraft((p) => ({ ...p, family_annual_income: x }))}
+              />
             </>
           ) : (
             <>
@@ -397,16 +693,32 @@ function Page() {
               <Info k="Permanent Address" v={s.permanent_address} />
               <Info k="Current Address" v={s.current_address || "—"} />
               <Info k="Father" v={`${s.father_name} · ${s.father_mobile}`} />
-              <Info k="Mother" v={s.mother_name ? `${s.mother_name} · ${s.mother_mobile || "—"}` : "—"} />
-              <Info k="Emergency" v={s.emergency_name ? `${s.emergency_name} (${s.emergency_relation || "—"}) · ${s.emergency_mobile || "—"}` : "—"} />
+              <Info
+                k="Mother"
+                v={s.mother_name ? `${s.mother_name} · ${s.mother_mobile || "—"}` : "—"}
+              />
+              <Info
+                k="Emergency"
+                v={
+                  s.emergency_name
+                    ? `${s.emergency_name} (${s.emergency_relation || "—"}) · ${s.emergency_mobile || "—"}`
+                    : "—"
+                }
+              />
               <Info k="Blood Group" v={(s as any).blood_group || "—"} />
-              <Info k="Category / Religion" v={`${(s as any).category || "—"} · ${(s as any).religion || "—"}`} />
+              <Info
+                k="Category / Religion"
+                v={`${(s as any).category || "—"} · ${(s as any).religion || "—"}`}
+              />
               <Info k="Previous School" v={s.previous_school || "—"} />
               <Info k="Previous Class" v={(s as any).previous_class || "—"} />
               <Info k="Admission Date" v={fmtDate(s.admission_date)} />
               <Info k="Academic Year" v={s.academic_year} />
               <Info k="Course Type" v={(s as any).course_type || "—"} />
-              <Info k="Course Stream" v={((s as any).course_stream || "—").toString().toUpperCase()} />
+              <Info
+                k="Course Stream"
+                v={((s as any).course_stream || "—").toString().toUpperCase()}
+              />
               <Info k="College Type" v={(s as any).college_type || "—"} />
               <Info k="PUC Hall Ticket No" v={(s as any).puc_hall_ticket_no || "—"} />
               <Info k="SSLC Register No" v={(s as any).sslc_register_number || "—"} />
@@ -415,13 +727,19 @@ function Page() {
               <Info k="NEET Marks Obtained" v={(s as any).neet_marks_obtained || "—"} />
               <Info k="Admission Type" v={(s as any).admission_type || "—"} />
               <Info k="Sub Caste Group" v={(s as any).sub_caste_group || "—"} />
-              <Info k="Van Facility" v={(s as any).van_facility_required ? "Required" : "Not Required"} />
+              <Info
+                k="Van Facility"
+                v={(s as any).van_facility_required ? "Required" : "Not Required"}
+              />
               <Info k="Present Address Pincode" v={(s as any).present_address_pincode || "—"} />
               <Info k="Permanent Address Pincode" v={(s as any).permanent_address_pincode || "—"} />
               <Info k="Mobile (Secondary)" v={(s as any).mobile_secondary || "—"} />
               <Info k="PAN Number" v={(s as any).pan_number || "—"} />
               <Info k="Admission Place" v={(s as any).admission_place || "—"} />
-              <Info k="Family Annual Income" v={(s as any).family_annual_income ? inr((s as any).family_annual_income) : "—"} />
+              <Info
+                k="Family Annual Income"
+                v={(s as any).family_annual_income ? inr((s as any).family_annual_income) : "—"}
+              />
             </>
           )}
         </CardContent>
@@ -429,23 +747,46 @@ function Page() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle><FileText className="mr-2 inline h-4 w-4" /> Documents</CardTitle>
+          <CardTitle>
+            <FileText className="mr-2 inline h-4 w-4" /> Documents
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <DocsUploader onUpload={(label, file) => uploadDoc.mutate({ label, file })} pending={uploadDoc.isPending} />
+          <DocsUploader
+            onUpload={(label, file) => uploadDoc.mutate({ label, file })}
+            pending={uploadDoc.isPending}
+          />
           {(documents.data?.length ?? 0) === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No documents uploaded yet.</p>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Uploaded</TableHead><TableHead>Size</TableHead><TableHead></TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Uploaded</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {documents.data?.map((d: any) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">{d.label}</TableCell>
-                    <TableCell className="text-xs">{fmtDateTime(d.created_at)} · {d.uploaded_by_name}</TableCell>
-                    <TableCell className="text-xs">{d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : "—"}</TableCell>
+                    <TableCell className="text-xs">
+                      {fmtDateTime(d.created_at)} · {d.uploaded_by_name}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : "—"}
+                    </TableCell>
                     <TableCell className="text-right">
-                      <a href={d.file_url} target="_blank" rel="noreferrer" className="text-xs underline">Open</a>
+                      <a
+                        href={d.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline"
+                      >
+                        Open
+                      </a>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -456,10 +797,22 @@ function Page() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Installments</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Installments</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Month</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>Month</TableHead>
+                <TableHead>Due</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {installments.data?.map((i: any) => (
                 <TableRow key={i.id}>
@@ -468,32 +821,73 @@ function Page() {
                   <TableCell className="text-sm">{fmtDate(i.due_date)}</TableCell>
                   <TableCell className="text-right">
                     {editInstId === i.id ? (
-                      <Input type="number" className="ml-auto h-8 w-28 text-right" value={editAmt}
-                        onChange={(e) => setEditAmt(Number(e.target.value))} />
-                    ) : inr(i.amount)}
+                      <Input
+                        type="number"
+                        className="ml-auto h-8 w-28 text-right"
+                        value={editAmt}
+                        onChange={(e) => setEditAmt(Number(e.target.value))}
+                      />
+                    ) : (
+                      inr(i.amount)
+                    )}
                   </TableCell>
                   <TableCell className="text-right">{inr(i.amount_paid)}</TableCell>
-                  <TableCell><StatusBadge status={i.status} /></TableCell>
+                  <TableCell>
+                    <StatusBadge status={i.status} />
+                  </TableCell>
                   <TableCell className="text-right">
-                      {editInstId === i.id ? (
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={async () => {
-                            if (editAmt < Number(i.amount_paid)) { toast.error("Amount cannot be less than already paid"); return; }
+                    {editInstId === i.id ? (
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            if (editAmt < Number(i.amount_paid)) {
+                              toast.error("Amount cannot be less than already paid");
+                              return;
+                            }
                             try {
-                              await updateInstallmentAmountFn({ data: { id: i.id, amount: editAmt } });
-                            } catch (e: any) { toast.error(e?.message || "Update failed"); return; }
-                            await logAudit({ actorName: fullName, actorRole: role, action: "edit_installment", entityType: "installment", entityId: i.id, oldValue: { amount: i.amount }, newValue: { amount: editAmt } });
+                              await updateInstallmentAmountFn({
+                                data: { id: i.id, amount: editAmt },
+                              });
+                            } catch (e: any) {
+                              toast.error(e?.message || "Update failed");
+                              return;
+                            }
+                            await logAudit({
+                              actorName: fullName,
+                              actorRole: role,
+                              action: "edit_installment",
+                              entityType: "installment",
+                              entityId: i.id,
+                              oldValue: { amount: i.amount },
+                              newValue: { amount: editAmt },
+                            });
                             toast.success("Updated");
                             setEditInstId(null);
-                            qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
-                          }}><Save className="h-3.5 w-3.5" /></Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditInstId(null)}><X className="h-3.5 w-3.5" /></Button>
-                        </div>
-                      ) : i.status !== "paid" ? (
-                        <Button size="sm" variant="ghost" onClick={() => { setEditInstId(i.id); setEditAmt(Number(i.amount)); }}>
-                          <Pencil className="h-3.5 w-3.5" />
+                            qc.invalidateQueries({
+                              queryKey: ["student", studentId, "installments"],
+                            });
+                          }}
+                        >
+                          <Save className="h-3.5 w-3.5" />
                         </Button>
-                      ) : null}
+                        <Button size="sm" variant="ghost" onClick={() => setEditInstId(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : i.status !== "paid" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditInstId(i.id);
+                          setEditAmt(Number(i.amount));
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))}
@@ -504,16 +898,32 @@ function Page() {
 
       {(planUpgrades.data?.length ?? 0) > 0 && (
         <Card>
-          <CardHeader><CardTitle><TrendingUp className="mr-2 inline h-4 w-4" /> Plan Upgrade History</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>
+              <TrendingUp className="mr-2 inline h-4 w-4" /> Plan Upgrade History
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>From</TableHead><TableHead>To</TableHead><TableHead>By</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {planUpgrades.data?.map((u: any) => (
                   <TableRow key={u.id}>
                     <TableCell className="text-xs">{fmtDateTime(u.created_at)}</TableCell>
-                    <TableCell className="text-sm">{PLAN_LABEL[u.from_plan as PlanKind] || u.from_plan}</TableCell>
-                    <TableCell className="text-sm">{PLAN_LABEL[u.to_plan as PlanKind] || u.to_plan}</TableCell>
+                    <TableCell className="text-sm">
+                      {PLAN_LABEL[u.from_plan as PlanKind] || u.from_plan}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {PLAN_LABEL[u.to_plan as PlanKind] || u.to_plan}
+                    </TableCell>
                     <TableCell className="text-sm">{u.performed_by_name}</TableCell>
                     <TableCell className="text-sm">{u.reason || "—"}</TableCell>
                   </TableRow>
@@ -526,19 +936,53 @@ function Page() {
 
       {(concessionCancels.data?.length ?? 0) > 0 && (
         <Card>
-          <CardHeader><CardTitle><X className="mr-2 inline h-4 w-4" /> Concession Cancellation History</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>
+              <X className="mr-2 inline h-4 w-4" /> Concession Cancellation History
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Original</TableHead><TableHead className="text-right">Cancelled</TableHead><TableHead className="text-right">New Net</TableHead><TableHead>By</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Original</TableHead>
+                  <TableHead className="text-right">Cancelled</TableHead>
+                  <TableHead className="text-right">New Net</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {concessionCancels.data?.map((c: any) => (
                   <TableRow key={c.id}>
                     <TableCell className="text-xs">{fmtDateTime(c.created_at)}</TableCell>
                     <TableCell className="text-right text-sm">{inr(c.original_discount)}</TableCell>
-                    <TableCell className="text-right text-sm text-destructive">{inr(c.cancelled_amount)}</TableCell>
+                    <TableCell className="text-right text-sm text-destructive">
+                      {inr(c.cancelled_amount)}
+                    </TableCell>
                     <TableCell className="text-right text-sm">{inr(c.new_net_payable)}</TableCell>
                     <TableCell className="text-sm">{c.performed_by_name}</TableCell>
-                    <TableCell className="text-sm">{c.reason || "—"}</TableCell>
+                    <TableCell className="text-sm">
+                      <div>{c.reason || "—"}</div>
+                      {c.revoked_at && (
+                        <div className="text-xs text-success">
+                          Revoked by {c.revoked_by_name || "—"} · {fmtDateTime(c.revoked_at)}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {!c.revoked_at && hasPermission("canRevokeConcessionCancellation") && (
+                        <RevokeConcessionButton
+                          concessionCancelId={c.id}
+                          studentId={studentId}
+                          actorName={fullName}
+                          actorRole={role}
+                          actorId={user?.id ?? null}
+                        />
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -548,20 +992,37 @@ function Page() {
       )}
 
       <Card>
-        <CardHeader><CardTitle><History className="mr-2 inline h-4 w-4" /> Transfer History</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>
+            <History className="mr-2 inline h-4 w-4" /> Transfer History
+          </CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           {(transfers.data?.length ?? 0) === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">No transfers recorded.</p>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Kind</TableHead><TableHead>From</TableHead><TableHead>To</TableHead><TableHead>By</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {transfers.data?.map((t: any) => (
                   <TableRow key={t.id}>
                     <TableCell className="text-xs">{fmtDateTime(t.created_at)}</TableCell>
                     <TableCell className="capitalize text-sm">{t.kind.replace("_", " ")}</TableCell>
-                    <TableCell className="text-sm">{t.from_batch?.name || t.from_class || "—"}</TableCell>
-                    <TableCell className="text-sm">{t.to_batch?.name || t.to_class || "—"}</TableCell>
+                    <TableCell className="text-sm">
+                      {t.from_batch?.name || t.from_class || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {t.to_batch?.name || t.to_class || "—"}
+                    </TableCell>
                     <TableCell className="text-sm">{t.performed_by_name}</TableCell>
                     <TableCell className="text-sm">{t.reason || "—"}</TableCell>
                   </TableRow>
@@ -573,20 +1034,32 @@ function Page() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Payments</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Payments</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           {(payments.data?.length ?? 0) === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">No payments yet.</p>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead>Mode</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Receipt</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {payments.data?.map((p: any) => (
                   <TableRow key={p.id}>
                     <TableCell className="font-mono text-xs">{p.receipt_number}</TableCell>
                     <TableCell className="text-sm">{fmtDate(p.payment_date)}</TableCell>
                     <TableCell className="capitalize text-sm">{p.payment_mode}</TableCell>
-                    <TableCell><StatusBadge status={p.status} /></TableCell>
+                    <TableCell>
+                      <StatusBadge status={p.status} />
+                    </TableCell>
                     <TableCell className="text-right font-semibold">{inr(p.amount)}</TableCell>
                   </TableRow>
                 ))}
@@ -596,29 +1069,33 @@ function Page() {
         </CardContent>
       </Card>
 
-      {isAdmin && (
+      {(isAdmin || hasPermission("canCancelConcession")) && (
         <>
-          <TransferDialog
-            open={transferOpen}
-            onClose={() => setTransferOpen(false)}
-            student={s}
-            onDone={() => {
-              qc.invalidateQueries({ queryKey: ["student", studentId] });
-              qc.invalidateQueries({ queryKey: ["student", studentId, "transfers"] });
-              qc.invalidateQueries({ queryKey: ["students"] });
-            }}
-          />
-          <PromoteDialog
-            open={promoteOpen}
-            onClose={() => setPromoteOpen(false)}
-            student={s}
-            onDone={() => {
-              qc.invalidateQueries({ queryKey: ["student", studentId] });
-              qc.invalidateQueries({ queryKey: ["student", studentId, "transfers"] });
-              qc.invalidateQueries({ queryKey: ["students"] });
-            }}
-          />
-          {fa && (
+          {isAdmin && (
+            <TransferDialog
+              open={transferOpen}
+              onClose={() => setTransferOpen(false)}
+              student={s}
+              onDone={() => {
+                qc.invalidateQueries({ queryKey: ["student", studentId] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "transfers"] });
+                qc.invalidateQueries({ queryKey: ["students"] });
+              }}
+            />
+          )}
+          {isAdmin && (
+            <PromoteDialog
+              open={promoteOpen}
+              onClose={() => setPromoteOpen(false)}
+              student={s}
+              onDone={() => {
+                qc.invalidateQueries({ queryKey: ["student", studentId] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "transfers"] });
+                qc.invalidateQueries({ queryKey: ["students"] });
+              }}
+            />
+          )}
+          {fa && hasPermission("canCancelConcession") && (
             <CancelConcessionDialog
               open={cancelConcessionOpen}
               onClose={() => setCancelConcessionOpen(false)}
@@ -631,7 +1108,7 @@ function Page() {
               }}
             />
           )}
-          {fa && currentPlan && PLAN_NEXT[currentPlan] && (
+          {fa && currentPlan && PLAN_NEXT[currentPlan] && isAdmin && (
             <UpgradePlanDialog
               open={upgradePlanOpen}
               onClose={() => setUpgradePlanOpen(false)}
@@ -661,11 +1138,26 @@ function Info({ k, v }: { k: string; v: string }) {
   );
 }
 
-function EditField({ k, v, onChange, type = "text" }: { k: string; v: any; onChange: (x: string) => void; type?: string }) {
+function EditField({
+  k,
+  v,
+  onChange,
+  type = "text",
+}: {
+  k: string;
+  v: any;
+  onChange: (x: string) => void;
+  type?: string;
+}) {
   return (
     <div className="rounded-md border border-border p-2">
       <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
-      <Input className="h-8" type={type} value={v ?? ""} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        className="h-8"
+        type={type}
+        value={v ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
@@ -679,33 +1171,135 @@ function EditTextarea({ k, v, onChange }: { k: string; v: any; onChange: (x: str
   );
 }
 
-function EditSelect({ k, v, options, onChange }: { k: string; v: any; options: string[]; onChange: (x: string) => void }) {
+function EditSelect({
+  k,
+  v,
+  options,
+  onChange,
+}: {
+  k: string;
+  v: any;
+  options: string[];
+  onChange: (x: string) => void;
+}) {
   return (
     <div className="rounded-md border border-border p-2">
       <Label className="mb-1 block text-xs text-muted-foreground">{k}</Label>
       <Select value={v || ""} onValueChange={onChange}>
-        <SelectTrigger className="h-8"><SelectValue placeholder="Select…" /></SelectTrigger>
-        <SelectContent>{options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+        <SelectTrigger className="h-8">
+          <SelectValue placeholder="Select…" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o} value={o}>
+              {o}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </div>
   );
 }
 
-function DocsUploader({ onUpload, pending }: { onUpload: (label: string, file: File) => void; pending: boolean }) {
+function DocsUploader({
+  onUpload,
+  pending,
+}: {
+  onUpload: (label: string, file: File) => void;
+  pending: boolean;
+}) {
   const [label, setLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
   return (
     <div className="mb-3 flex flex-col gap-2 rounded-md border border-dashed border-border p-3 sm:flex-row sm:items-end">
-      <div className="flex-1"><Label className="mb-1 block text-xs">Document name</Label><Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Aadhaar, 10th Marksheet…" /></div>
-      <div className="flex-1"><Label className="mb-1 block text-xs">File</Label><Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} /></div>
-      <Button size="sm" disabled={!label || !file || pending} onClick={() => { if (file) { onUpload(label, file); setFile(null); setLabel(""); } }}>
+      <div className="flex-1">
+        <Label className="mb-1 block text-xs">Document name</Label>
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Aadhaar, 10th Marksheet…"
+        />
+      </div>
+      <div className="flex-1">
+        <Label className="mb-1 block text-xs">File</Label>
+        <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      </div>
+      <Button
+        size="sm"
+        disabled={!label || !file || pending}
+        onClick={() => {
+          if (file) {
+            onUpload(label, file);
+            setFile(null);
+            setLabel("");
+          }
+        }}
+      >
         <Upload className="h-4 w-4" /> {pending ? "Uploading…" : "Upload"}
       </Button>
     </div>
   );
 }
 
-function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onClose: () => void; student: any; onDone: () => void }) {
+function RevokeConcessionButton({
+  concessionCancelId,
+  studentId,
+  actorId,
+  actorName,
+  actorRole,
+}: {
+  concessionCancelId: string;
+  studentId: string;
+  actorId: string | null;
+  actorName: string;
+  actorRole: AppRole | null;
+}) {
+  const qc = useQueryClient();
+  const revoke = useMutation({
+    mutationFn: async () => {
+      await revokeConcessionCancellationFn({
+        data: {
+          concessionCancelId,
+          reason: "Revoked by admin",
+          performed_by: actorId,
+          performed_by_name: actorName,
+        },
+      });
+      await logAudit({
+        actorName,
+        actorRole,
+        action: "revoke_concession_cancellation",
+        entityType: "student",
+        entityId: studentId,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Concession cancellation revoked");
+      qc.invalidateQueries({ queryKey: ["student", studentId, "concession-cancels"] });
+      qc.invalidateQueries({ queryKey: ["student", studentId, "fee-assignment"] });
+      qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
+    },
+    onError: (e: any) => toast.error(e?.message || "Failed to revoke"),
+  });
+
+  return (
+    <Button size="sm" variant="outline" onClick={() => revoke.mutate()} disabled={revoke.isPending}>
+      Revoke
+    </Button>
+  );
+}
+
+function TransferDialog({
+  open,
+  onClose,
+  student,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  student: any;
+  onDone: () => void;
+}) {
   const { fullName, role, user } = useAuth();
   const [batchId, setBatchId] = useState("");
   const [reason, setReason] = useState("");
@@ -714,7 +1308,9 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
     queryKey: ["transfer-batches", student.course_id, student.campus_id, open],
     enabled: open,
     queryFn: async () => {
-      const data = await getBatchesFn({ data: { courseId: student.course_id, campusId: student.campus_id, excludeClosed: true } });
+      const data = await getBatchesFn({
+        data: { courseId: student.course_id, campusId: student.campus_id, excludeClosed: true },
+      });
       return (data || []).filter((b: any) => b.id !== student.batch_id);
     },
   });
@@ -736,12 +1332,23 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
         },
       });
       await logAudit({
-        actorName: fullName, actorRole: role,
-        action: "transfer_batch", entityType: "student", entityId: student.id,
-        oldValue: { batch_id: fromBatchId }, newValue: { batch_id: batchId }, reason: reason || undefined,
+        actorName: fullName,
+        actorRole: role,
+        action: "transfer_batch",
+        entityType: "student",
+        entityId: student.id,
+        oldValue: { batch_id: fromBatchId },
+        newValue: { batch_id: batchId },
+        reason: reason || undefined,
       });
     },
-    onSuccess: () => { toast.success("Student transferred"); onDone(); onClose(); setBatchId(""); setReason(""); },
+    onSuccess: () => {
+      toast.success("Student transferred");
+      onDone();
+      onClose();
+      setBatchId("");
+      setReason("");
+    },
     onError: (e: any) => toast.error(e?.message || "Transfer failed"),
   });
 
@@ -750,31 +1357,67 @@ function TransferDialog({ open, onClose, student, onDone }: { open: boolean; onC
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Transfer to another batch</DialogTitle>
-          <DialogDescription>Same course & campus. The change is logged in the audit trail.</DialogDescription>
+          <DialogDescription>
+            Same course & campus. The change is logged in the audit trail.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div><Label className="mb-1 block text-xs">Current</Label><div className="text-sm">{student.batches?.name}</div></div>
+          <div>
+            <Label className="mb-1 block text-xs">Current</Label>
+            <div className="text-sm">{student.batches?.name}</div>
+          </div>
           <div>
             <Label className="mb-1 block text-xs">Move to *</Label>
             <Select value={batchId} onValueChange={setBatchId}>
-              <SelectTrigger><SelectValue placeholder={(batches.data?.length ?? 0) === 0 ? "No other batches available" : "Select batch"} /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    (batches.data?.length ?? 0) === 0
+                      ? "No other batches available"
+                      : "Select batch"
+                  }
+                />
+              </SelectTrigger>
               <SelectContent>
-                {batches.data?.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name} {b.timing ? `· ${b.timing}` : ""}</SelectItem>)}
+                {batches.data?.map((b: any) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name} {b.timing ? `· ${b.timing}` : ""}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+          <div>
+            <Label className="mb-1 block text-xs">Reason</Label>
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => submit.mutate()} disabled={submit.isPending || !batchId}>{submit.isPending ? "Transferring…" : "Confirm transfer"}</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || !batchId}>
+            {submit.isPending ? "Transferring…" : "Confirm transfer"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; onDone: () => void }) {
+function CancelConcessionDialog({
+  open,
+  onClose,
+  student,
+  feeAssignment,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  student: any;
+  feeAssignment: any;
+  onDone: () => void;
+}) {
   const { fullName, role, user } = useAuth();
   const original = Number(feeAssignment.discount_amount || 0);
   const [amount, setAmount] = useState(original);
@@ -798,9 +1441,22 @@ function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone 
           performed_by_name: fullName,
         },
       });
-      await logAudit({ actorName: fullName, actorRole: role, action: "cancel_concession", entityType: "student", entityId: student.id, oldValue: { discount: original }, newValue: { discount: newDiscount, cancelled: cancel }, reason });
+      await logAudit({
+        actorName: fullName,
+        actorRole: role,
+        action: "cancel_concession",
+        entityType: "student",
+        entityId: student.id,
+        oldValue: { discount: original },
+        newValue: { discount: newDiscount, cancelled: cancel },
+        reason,
+      });
     },
-    onSuccess: () => { toast.success("Concession cancelled"); onDone(); onClose(); },
+    onSuccess: () => {
+      toast.success("Concession cancelled");
+      onDone();
+      onClose();
+    },
     onError: (e: any) => toast.error(e?.message || "Failed"),
   });
 
@@ -809,22 +1465,57 @@ function CancelConcessionDialog({ open, onClose, student, feeAssignment, onDone 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Cancel Concession</DialogTitle>
-          <DialogDescription>Original concession {inr(original)}. Cancelled amount is added back to the next unpaid instalment.</DialogDescription>
+          <DialogDescription>
+            Original concession {inr(original)}. Cancelled amount is added back to the next unpaid
+            instalment.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div><Label className="mb-1 block text-xs">Amount to cancel (₹) *</Label><Input type="number" min={0} max={original} value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></div>
-          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+          <div>
+            <Label className="mb-1 block text-xs">Amount to cancel (₹) *</Label>
+            <Input
+              type="number"
+              min={0}
+              max={original}
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Reason</Label>
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => submit.mutate()} disabled={submit.isPending || amount <= 0}>{submit.isPending ? "Saving…" : "Confirm"}</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || amount <= 0}>
+            {submit.isPending ? "Saving…" : "Confirm"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan, installments, onDone }: { open: boolean; onClose: () => void; student: any; feeAssignment: any; currentPlan: PlanKind; installments: any[]; onDone: () => void }) {
+function UpgradePlanDialog({
+  open,
+  onClose,
+  student,
+  feeAssignment,
+  currentPlan,
+  installments,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  student: any;
+  feeAssignment: any;
+  currentPlan: PlanKind;
+  installments: any[];
+  onDone: () => void;
+}) {
   const { fullName, role, user } = useAuth();
   const nextPlan = PLAN_NEXT[currentPlan]!;
   const [reason, setReason] = useState("Payment delay");
@@ -834,14 +1525,18 @@ function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan,
       const newMonths = PLAN_MONTHS[nextPlan];
       const paidSum = installments.reduce((a, i) => a + Number(i.amount_paid), 0);
       const remaining = Number(feeAssignment.net_payable) - paidSum;
-      const paidCount = installments.filter((i) => Number(i.amount_paid) >= Number(i.amount)).length;
+      const paidCount = installments.filter(
+        (i) => Number(i.amount_paid) >= Number(i.amount),
+      ).length;
       const newRemainingCount = newMonths.length - paidCount;
       if (newRemainingCount <= 0) throw new Error("Plan already covers all paid instalments");
       const splits = evenSplit(remaining, newRemainingCount);
       const year = new Date().getFullYear();
       const dueDay = 5;
 
-      const unpaidIds = installments.filter((i) => Number(i.amount_paid) < Number(i.amount)).map((i: any) => i.id);
+      const unpaidIds = installments
+        .filter((i) => Number(i.amount_paid) < Number(i.amount))
+        .map((i: any) => i.id);
       const newRows = newMonths.slice(paidCount).map((m, idx) => ({
         installment_no: paidCount + idx + 1,
         amount: splits[idx],
@@ -862,9 +1557,22 @@ function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan,
           delete_installment_ids: unpaidIds,
         },
       });
-      await logAudit({ actorName: fullName, actorRole: role, action: "upgrade_plan", entityType: "student", entityId: student.id, oldValue: { plan: currentPlan }, newValue: { plan: nextPlan }, reason });
+      await logAudit({
+        actorName: fullName,
+        actorRole: role,
+        action: "upgrade_plan",
+        entityType: "student",
+        entityId: student.id,
+        oldValue: { plan: currentPlan },
+        newValue: { plan: nextPlan },
+        reason,
+      });
     },
-    onSuccess: () => { toast.success(`Upgraded to ${PLAN_LABEL[nextPlan]}`); onDone(); onClose(); },
+    onSuccess: () => {
+      toast.success(`Upgraded to ${PLAN_LABEL[nextPlan]}`);
+      onDone();
+      onClose();
+    },
     onError: (e: any) => toast.error(e?.message || "Upgrade failed"),
   });
 
@@ -873,21 +1581,41 @@ function UpgradePlanDialog({ open, onClose, student, feeAssignment, currentPlan,
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Upgrade Instalment Plan</DialogTitle>
-          <DialogDescription>From {PLAN_LABEL[currentPlan]} to {PLAN_LABEL[nextPlan]}. Unpaid instalments are rebalanced across the new months.</DialogDescription>
+          <DialogDescription>
+            From {PLAN_LABEL[currentPlan]} to {PLAN_LABEL[nextPlan]}. Unpaid instalments are
+            rebalanced across the new months.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+          <div>
+            <Label className="mb-1 block text-xs">Reason</Label>
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>{submit.isPending ? "Upgrading…" : "Confirm upgrade"}</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
+            {submit.isPending ? "Upgrading…" : "Confirm upgrade"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onClose: () => void; student: any; onDone: () => void }) {
+function PromoteDialog({
+  open,
+  onClose,
+  student,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  student: any;
+  onDone: () => void;
+}) {
   const { fullName, role, user } = useAuth();
   const [toClass, setToClass] = useState<"11th" | "12th" | "dropper">("12th");
   const [newCourseId, setNewCourseId] = useState("");
@@ -902,7 +1630,10 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
   const batches = useQuery({
     queryKey: ["promote-batches", newCourseId],
     enabled: open && !!newCourseId,
-    queryFn: () => getBatchesFn({ data: { courseId: newCourseId, campusId: student.campus_id, excludeClosed: true } }),
+    queryFn: () =>
+      getBatchesFn({
+        data: { courseId: newCourseId, campusId: student.campus_id, excludeClosed: true },
+      }),
   });
 
   const submit = useMutation({
@@ -929,14 +1660,21 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
       });
       await updateStudentFn({ data: { id: student.id, updates: { previous_class: fromClass } } });
       await logAudit({
-        actorName: fullName, actorRole: role,
-        action: "promote_class", entityType: "student", entityId: student.id,
+        actorName: fullName,
+        actorRole: role,
+        action: "promote_class",
+        entityType: "student",
+        entityId: student.id,
         oldValue: { class_year: fromClass, course_id: fromCourseId, batch_id: fromBatchId },
         newValue: { class_year: toClass, course_id: newCourseId, batch_id: newBatchId },
         reason: reason || undefined,
       });
     },
-    onSuccess: () => { toast.success("Student promoted. Previous data retained."); onDone(); onClose(); },
+    onSuccess: () => {
+      toast.success("Student promoted. Previous data retained.");
+      onDone();
+      onClose();
+    },
     onError: (e: any) => toast.error(e?.message || "Promotion failed"),
   });
 
@@ -945,14 +1683,21 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Promote to next class</DialogTitle>
-          <DialogDescription>Previous class, payment history, and documents are retained.</DialogDescription>
+          <DialogDescription>
+            Previous class, payment history, and documents are retained.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div><Label className="mb-1 block text-xs">Current class</Label><div className="text-sm">{student.class_year}</div></div>
+          <div>
+            <Label className="mb-1 block text-xs">Current class</Label>
+            <div className="text-sm">{student.class_year}</div>
+          </div>
           <div>
             <Label className="mb-1 block text-xs">New class *</Label>
             <Select value={toClass} onValueChange={(v: any) => setToClass(v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="11th">11th</SelectItem>
                 <SelectItem value="12th">12th</SelectItem>
@@ -962,23 +1707,52 @@ function PromoteDialog({ open, onClose, student, onDone }: { open: boolean; onCl
           </div>
           <div>
             <Label className="mb-1 block text-xs">New course *</Label>
-            <Select value={newCourseId} onValueChange={(v) => { setNewCourseId(v); setNewBatchId(""); }}>
-              <SelectTrigger><SelectValue placeholder="Select course" /></SelectTrigger>
-              <SelectContent>{courses.data?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+            <Select
+              value={newCourseId}
+              onValueChange={(v) => {
+                setNewCourseId(v);
+                setNewBatchId("");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select course" />
+              </SelectTrigger>
+              <SelectContent>
+                {courses.data?.map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
           <div>
             <Label className="mb-1 block text-xs">New batch *</Label>
             <Select value={newBatchId} onValueChange={setNewBatchId} disabled={!newCourseId}>
-              <SelectTrigger><SelectValue placeholder={newCourseId ? "Select batch" : "Pick course first"} /></SelectTrigger>
-              <SelectContent>{batches.data?.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name} {b.timing ? `· ${b.timing}` : ""}</SelectItem>)}</SelectContent>
+              <SelectTrigger>
+                <SelectValue placeholder={newCourseId ? "Select batch" : "Pick course first"} />
+              </SelectTrigger>
+              <SelectContent>
+                {batches.data?.map((b: any) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name} {b.timing ? `· ${b.timing}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div><Label className="mb-1 block text-xs">Reason</Label><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+          <div>
+            <Label className="mb-1 block text-xs">Reason</Label>
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>{submit.isPending ? "Promoting…" : "Confirm promotion"}</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
+            {submit.isPending ? "Promoting…" : "Confirm promotion"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

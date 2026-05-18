@@ -1,39 +1,85 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth, roleLabel } from "@/lib/auth";
 import {
-  LayoutDashboard, GraduationCap, UserPlus, Receipt, BookOpen,
-  AlertTriangle, BarChart3, ShieldCheck, LogOut, Settings, Menu, X,
+  LayoutDashboard,
+  GraduationCap,
+  UserPlus,
+  Receipt,
+  BookOpen,
+  AlertTriangle,
+  BarChart3,
+  ShieldCheck,
+  LogOut,
+  Settings,
+  Menu,
+  X,
   Building2,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useCampus } from "@/lib/campus";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
-type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; roles: ("admin" | "cashier")[] };
+import {
+  hasRole as userHasRole,
+  PRIVILEGE_KEYS,
+  type AppRole,
+  type PrivilegeKey,
+} from "@/lib/permissions";
+
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  roles?: AppRole[];
+  permission?: PrivilegeKey;
+};
 
 const navItems: NavItem[] = [
-  { to: "/dashboard",  label: "Dashboard",        icon: LayoutDashboard, roles: ["admin", "cashier"] },
-  { to: "/students",   label: "Students",          icon: GraduationCap,   roles: ["admin", "cashier"] },
-  { to: "/enroll",     label: "Enroll Student",    icon: UserPlus,        roles: ["admin"] },
-  { to: "/collect",    label: "Collect Fee",       icon: Receipt,         roles: ["admin", "cashier"] },
-  { to: "/courses",    label: "Courses & Batches", icon: BookOpen,        roles: ["admin"] },
-  { to: "/defaulters", label: "Defaulters",        icon: AlertTriangle,   roles: ["admin", "cashier"] },
-  { to: "/reports",    label: "Reports",           icon: BarChart3,       roles: ["admin", "cashier"] },
-  { to: "/audit",      label: "Audit Trail",       icon: ShieldCheck,     roles: ["admin"] },
-  { to: "/settings",   label: "Settings",          icon: Settings,        roles: ["admin"] },
+  {
+    to: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    roles: ["ADMIN", "ACCOUNTANT", "ENROLLMENT_OFFICER"],
+  },
+  {
+    to: "/students",
+    label: "Students",
+    icon: GraduationCap,
+    roles: ["ADMIN", "ACCOUNTANT", "ENROLLMENT_OFFICER"],
+  },
+  { to: "/enroll", label: "Enroll Student", icon: UserPlus, permission: "canEnrollStudents" },
+  { to: "/collect", label: "Collect Fee", icon: Receipt, roles: ["ADMIN", "ACCOUNTANT"] },
+  { to: "/courses", label: "Courses & Batches", icon: BookOpen, roles: ["ADMIN"] },
+  { to: "/defaulters", label: "Defaulters", icon: AlertTriangle, roles: ["ADMIN", "ACCOUNTANT"] },
+  { to: "/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN", "ACCOUNTANT"] },
+  { to: "/audit", label: "Audit Trail", icon: ShieldCheck, roles: ["ADMIN"] },
+  { to: "/users", label: "User Management", icon: Users, roles: ["ADMIN"] },
+  { to: "/settings", label: "Settings", icon: Settings, roles: ["ADMIN"] },
 ];
 
 export function AppShell() {
-  const { fullName, role, signOut } = useAuth();
+  const { fullName, role, signOut, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const { campuses, campus, campusId, setCampusId } = useCampus();
 
   // Close sidebar on route change (mobile)
-  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
@@ -42,10 +88,17 @@ export function AppShell() {
     } else {
       document.body.style.overflow = "";
     }
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [sidebarOpen]);
 
-  const visible = navItems.filter((i) => role && i.roles.includes(role));
+  const visible = navItems.filter((i) => {
+    if (!role) return false;
+    if (i.permission && !hasPermission(i.permission)) return false;
+    if (i.roles && !userHasRole({ role }, i.roles)) return false;
+    return true;
+  });
 
   const handleSignOut = async () => {
     await signOut();
@@ -57,7 +110,6 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-
       {/* ── Mobile backdrop ───────────────────────────────────────── */}
       {sidebarOpen && (
         <div
@@ -83,7 +135,9 @@ export function AppShell() {
             </div>
             <div className="min-w-0 leading-tight">
               <div className="truncate text-sm font-semibold text-foreground">ENA Fees</div>
-              <div className="truncate text-[10px] text-muted-foreground">Excellent NEET Academy</div>
+              <div className="truncate text-[10px] text-muted-foreground">
+                Excellent NEET Academy
+              </div>
             </div>
           </div>
           <button
@@ -125,18 +179,39 @@ export function AppShell() {
               <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                 <Building2 className="h-3 w-3" /> Active Campus
               </div>
-              <div className="truncate text-xs font-semibold text-foreground mt-0.5">{campus.name}</div>
-              {campus.city && <div className="truncate text-[10px] text-muted-foreground">{campus.city}</div>}
+              <div className="truncate text-xs font-semibold text-foreground mt-0.5">
+                {campus.name}
+              </div>
+              {campus.city && (
+                <div className="truncate text-[10px] text-muted-foreground">{campus.city}</div>
+              )}
             </div>
           )}
           <div className="rounded-md bg-muted px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Signed in as</div>
-            <div className="truncate text-xs font-semibold text-foreground mt-0.5">{fullName || "—"}</div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Signed in as
+            </div>
+            <div className="truncate text-xs font-semibold text-foreground mt-0.5">
+              {fullName || "—"}
+            </div>
             <span className="mt-0.5 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
               {roleLabel(role)}
             </span>
           </div>
-          <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={handleSignOut}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-8 text-xs"
+            onClick={() => setProfileOpen(true)}
+          >
+            My Profile
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs"
+            onClick={handleSignOut}
+          >
             <LogOut className="h-3.5 w-3.5" /> Sign out
           </Button>
         </div>
@@ -144,7 +219,6 @@ export function AppShell() {
 
       {/* ── Main area ────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <Button
@@ -173,7 +247,8 @@ export function AppShell() {
                 <SelectContent>
                   {campuses.map((c) => (
                     <SelectItem key={c.id} value={c.id} className="text-xs">
-                      {c.name}{c.city ? ` · ${c.city}` : ""}
+                      {c.name}
+                      {c.city ? ` · ${c.city}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -189,6 +264,34 @@ export function AppShell() {
           </div>
         </main>
       </div>
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>My Profile</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Name</div>
+              <div className="font-medium">{fullName || "—"}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Role</div>
+              <div className="font-medium">{roleLabel(role)}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="mb-2 text-xs text-muted-foreground">Privileges</div>
+              <div className="grid gap-2">
+                {PRIVILEGE_KEYS.map((permission) => (
+                  <label key={permission} className="flex items-center gap-2 text-xs">
+                    <Checkbox checked={hasPermission(permission)} disabled />
+                    <span>{permission}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

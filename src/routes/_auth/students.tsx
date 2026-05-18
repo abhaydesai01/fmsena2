@@ -11,10 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { GraduationCap, Search, Download, UserPlus } from "lucide-react";
 import { fmtDate, exportCSV } from "@/lib/format";
@@ -23,7 +32,8 @@ import { useAuth } from "@/lib/auth";
 export const Route = createFileRoute("/_auth/students")({ component: Page });
 
 function Page() {
-  const { isAdmin } = useAuth();
+  const { hasPermission } = useAuth();
+  const canEnroll = hasPermission("canEnrollStudents");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [courseId, setCourseId] = useState<string>("all");
@@ -35,7 +45,13 @@ function Page() {
 
   const students = useQuery({
     queryKey: ["students", "list", status, courseId],
-    queryFn: () => getStudentsFn({ data: { status: status === "all" ? undefined : status, courseId: courseId === "all" ? undefined : courseId } }),
+    queryFn: () =>
+      getStudentsFn({
+        data: {
+          status: status === "all" ? undefined : status,
+          courseId: courseId === "all" ? undefined : courseId,
+        },
+      }),
   });
 
   const filtered = useMemo(() => {
@@ -45,7 +61,7 @@ function Page() {
       (s: any) =>
         s.full_name?.toLowerCase().includes(term) ||
         s.admission_number?.toLowerCase().includes(term) ||
-        s.mobile?.toLowerCase().includes(term)
+        s.mobile?.toLowerCase().includes(term),
     );
   }, [students.data, q]);
 
@@ -56,15 +72,34 @@ function Page() {
         description="Search and filter all enrolled students."
         actions={
           <>
-            <Button variant="outline" size="sm" disabled={!filtered.length} onClick={() => exportCSV(`students_${Date.now()}.csv`, filtered.map((s: any) => ({
-              admission_number: s.admission_number, full_name: s.full_name, mobile: s.mobile,
-              course: s.courses?.name, batch: s.batches?.name, class_year: s.class_year,
-              admission_date: s.admission_date, status: s.status,
-            })))}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!filtered.length}
+              onClick={() =>
+                exportCSV(
+                  `students_${Date.now()}.csv`,
+                  filtered.map((s: any) => ({
+                    admission_number: s.admission_number,
+                    full_name: s.full_name,
+                    mobile: s.mobile,
+                    course: s.courses?.name,
+                    batch: s.batches?.name,
+                    class_year: s.class_year,
+                    admission_date: s.admission_date,
+                    status: s.status,
+                  })),
+                )
+              }
+            >
               <Download className="h-4 w-4" /> Export
             </Button>
-            {isAdmin && (
-              <Link to="/enroll"><Button size="sm"><UserPlus className="h-4 w-4" /> Enrol Student</Button></Link>
+            {canEnroll && (
+              <Link to="/enroll">
+                <Button size="sm">
+                  <UserPlus className="h-4 w-4" /> Enrol Student
+                </Button>
+              </Link>
             )}
           </>
         }
@@ -74,10 +109,17 @@ function Page() {
         <CardContent className="grid gap-3 p-4 md:grid-cols-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, admission no, mobile…" className="pl-9" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, admission no, mobile…"
+              className="pl-9"
+            />
           </div>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
@@ -86,11 +128,15 @@ function Page() {
             </SelectContent>
           </Select>
           <Select value={courseId} onValueChange={setCourseId}>
-            <SelectTrigger><SelectValue placeholder="Course" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Course" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All courses</SelectItem>
               {(courses.data || []).map((c: any) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -104,7 +150,15 @@ function Page() {
           icon={GraduationCap}
           title="No students found"
           description="Adjust filters or enroll a new student to get started."
-          action={isAdmin ? <Link to="/enroll"><Button><UserPlus className="h-4 w-4" /> Enrol Student</Button></Link> : undefined}
+          action={
+            canEnroll ? (
+              <Link to="/enroll">
+                <Button>
+                  <UserPlus className="h-4 w-4" /> Enrol Student
+                </Button>
+              </Link>
+            ) : undefined
+          }
         />
       ) : (
         <Card>
@@ -126,12 +180,20 @@ function Page() {
                   {filtered.map((s: any) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-mono text-xs">
-                        <Link to="/students/$studentId" params={{ studentId: s.id }} className="underline-offset-2 hover:underline">
+                        <Link
+                          to="/students/$studentId"
+                          params={{ studentId: s.id }}
+                          className="underline-offset-2 hover:underline"
+                        >
                           {s.admission_number}
                         </Link>
                       </TableCell>
                       <TableCell className="font-medium">
-                        <Link to="/students/$studentId" params={{ studentId: s.id }} className="hover:underline">
+                        <Link
+                          to="/students/$studentId"
+                          params={{ studentId: s.id }}
+                          className="hover:underline"
+                        >
                           {s.full_name}
                         </Link>
                       </TableCell>
@@ -142,7 +204,9 @@ function Page() {
                       <TableCell>{s.class_year}</TableCell>
                       <TableCell>{s.mobile}</TableCell>
                       <TableCell className="text-sm">{fmtDate(s.admission_date)}</TableCell>
-                      <TableCell><StatusBadge status={s.status} /></TableCell>
+                      <TableCell>
+                        <StatusBadge status={s.status} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

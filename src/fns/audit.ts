@@ -1,12 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getDb, toObjs } from "./db";
 import { getSessionFn } from "./auth";
+import type { AppRole } from "@/lib/permissions";
 
 export const logAuditFn = createServerFn({ method: "POST" })
   .inputValidator(
     (d: {
       actorName: string;
-      actorRole: "admin" | "cashier" | null;
+      actorRole: AppRole | null;
       action: string;
       entityType: string;
       entityId?: string | null;
@@ -18,17 +19,25 @@ export const logAuditFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const session = await getSessionFn();
     const db = await getDb();
+    const now = new Date().toISOString();
     await db.collection("audit_log").insertOne({
+      action: data.action,
+      performed_by: session?.userId ?? null,
+      performed_by_name: data.actorName,
+      target_entity: data.entityType,
+      target_entity_id: data.entityId ?? null,
+      timestamp: now,
+      before_state: data.oldValue ?? null,
+      after_state: data.newValue ?? null,
       actor_id: session?.userId ?? null,
       actor_name: data.actorName,
       actor_role: data.actorRole ?? null,
-      action: data.action,
       entity_type: data.entityType,
       entity_id: data.entityId ?? null,
       old_value: data.oldValue ?? null,
       new_value: data.newValue ?? null,
       reason: data.reason ?? null,
-      created_at: new Date().toISOString(),
+      created_at: now,
     });
     return { ok: true };
   });
