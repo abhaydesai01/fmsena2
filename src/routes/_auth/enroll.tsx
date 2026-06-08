@@ -221,7 +221,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     onSuccess: (s) => {
       toast.success(`Enrolled ${s.full_name} · ${s.admission_number}`);
       qc.invalidateQueries({ queryKey: ["students"] });
-      navigate({ to: "/students" });
+      navigate({ to: "/students/$studentId/admission-form", params: { studentId: s.studentId } });
     },
     onError: (e: any) => toast.error(e?.message || "Failed to enroll"),
   });

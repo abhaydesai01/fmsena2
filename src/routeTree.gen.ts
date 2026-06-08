@@ -24,6 +24,7 @@ import { Route as AuthCoursesRouteImport } from './routes/_auth/courses'
 import { Route as AuthCollectRouteImport } from './routes/_auth/collect'
 import { Route as AuthAuditRouteImport } from './routes/_auth/audit'
 import { Route as AuthStudentsStudentIdRouteImport } from './routes/_auth/students_.$studentId'
+import { Route as AuthStudentsStudentIdAdmissionFormRouteImport } from './routes/_auth/students_.$studentId.admission-form'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -99,6 +100,12 @@ const AuthStudentsStudentIdRoute = AuthStudentsStudentIdRouteImport.update({
   path: '/students/$studentId',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthStudentsStudentIdAdmissionFormRoute =
+  AuthStudentsStudentIdAdmissionFormRouteImport.update({
+    id: '/admission-form',
+    path: '/admission-form',
+    getParentRoute: () => AuthStudentsStudentIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -114,7 +121,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthSettingsRoute
   '/students': typeof AuthStudentsRoute
   '/users': typeof AuthUsersRoute
-  '/students/$studentId': typeof AuthStudentsStudentIdRoute
+  '/students/$studentId': typeof AuthStudentsStudentIdRouteWithChildren
+  '/students/$studentId/admission-form': typeof AuthStudentsStudentIdAdmissionFormRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -130,7 +138,8 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthSettingsRoute
   '/students': typeof AuthStudentsRoute
   '/users': typeof AuthUsersRoute
-  '/students/$studentId': typeof AuthStudentsStudentIdRoute
+  '/students/$studentId': typeof AuthStudentsStudentIdRouteWithChildren
+  '/students/$studentId/admission-form': typeof AuthStudentsStudentIdAdmissionFormRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -148,7 +157,8 @@ export interface FileRoutesById {
   '/_auth/settings': typeof AuthSettingsRoute
   '/_auth/students': typeof AuthStudentsRoute
   '/_auth/users': typeof AuthUsersRoute
-  '/_auth/students_/$studentId': typeof AuthStudentsStudentIdRoute
+  '/_auth/students_/$studentId': typeof AuthStudentsStudentIdRouteWithChildren
+  '/_auth/students_/$studentId/admission-form': typeof AuthStudentsStudentIdAdmissionFormRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/students'
     | '/users'
     | '/students/$studentId'
+    | '/students/$studentId/admission-form'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/students'
     | '/users'
     | '/students/$studentId'
+    | '/students/$studentId/admission-form'
   id:
     | '__root__'
     | '/'
@@ -200,6 +212,7 @@ export interface FileRouteTypes {
     | '/_auth/students'
     | '/_auth/users'
     | '/_auth/students_/$studentId'
+    | '/_auth/students_/$studentId/admission-form'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -315,8 +328,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthStudentsStudentIdRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/students_/$studentId/admission-form': {
+      id: '/_auth/students_/$studentId/admission-form'
+      path: '/admission-form'
+      fullPath: '/students/$studentId/admission-form'
+      preLoaderRoute: typeof AuthStudentsStudentIdAdmissionFormRouteImport
+      parentRoute: typeof AuthStudentsStudentIdRoute
+    }
   }
 }
+
+interface AuthStudentsStudentIdRouteChildren {
+  AuthStudentsStudentIdAdmissionFormRoute: typeof AuthStudentsStudentIdAdmissionFormRoute
+}
+
+const AuthStudentsStudentIdRouteChildren: AuthStudentsStudentIdRouteChildren = {
+  AuthStudentsStudentIdAdmissionFormRoute:
+    AuthStudentsStudentIdAdmissionFormRoute,
+}
+
+const AuthStudentsStudentIdRouteWithChildren =
+  AuthStudentsStudentIdRoute._addFileChildren(
+    AuthStudentsStudentIdRouteChildren,
+  )
 
 interface AuthRouteChildren {
   AuthAuditRoute: typeof AuthAuditRoute
@@ -330,7 +364,7 @@ interface AuthRouteChildren {
   AuthSettingsRoute: typeof AuthSettingsRoute
   AuthStudentsRoute: typeof AuthStudentsRoute
   AuthUsersRoute: typeof AuthUsersRoute
-  AuthStudentsStudentIdRoute: typeof AuthStudentsStudentIdRoute
+  AuthStudentsStudentIdRoute: typeof AuthStudentsStudentIdRouteWithChildren
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
@@ -345,7 +379,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthSettingsRoute: AuthSettingsRoute,
   AuthStudentsRoute: AuthStudentsRoute,
   AuthUsersRoute: AuthUsersRoute,
-  AuthStudentsStudentIdRoute: AuthStudentsStudentIdRoute,
+  AuthStudentsStudentIdRoute: AuthStudentsStudentIdRouteWithChildren,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

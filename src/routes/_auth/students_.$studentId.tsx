@@ -46,6 +46,7 @@ import {
   Save,
   X,
   Receipt,
+  Printer,
 } from "lucide-react";
 import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -251,6 +252,11 @@ function Page() {
                   <TrendingUp className="h-4 w-4" /> Re-plan Late Joiner
                 </Button>
               )}
+              <Link to="/students/$studentId/admission-form" params={{ studentId }}>
+                <Button variant="outline" size="sm">
+                  <Printer className="h-4 w-4" /> Admission Form
+                </Button>
+              </Link>
               {hasPermission("canCancelConcession") &&
                 hasConcession &&
                 Number(fa.concession_cancelled_amount || 0) === 0 && (
