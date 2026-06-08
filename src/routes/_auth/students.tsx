@@ -28,26 +28,29 @@ import {
 import { GraduationCap, Search, Download, UserPlus } from "lucide-react";
 import { fmtDate, exportCSV } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 
 export const Route = createFileRoute("/_auth/students")({ component: Page });
 
 function Page() {
   const { hasPermission } = useAuth();
+  const { campusId } = useCampus();
   const canEnroll = hasPermission("canEnrollStudents");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [courseId, setCourseId] = useState<string>("all");
 
   const courses = useQuery({
-    queryKey: ["students", "courses-filter"],
-    queryFn: () => getCoursesFn({ data: {} }),
+    queryKey: ["students", "courses-filter", campusId],
+    queryFn: () => getCoursesFn({ data: { campusId: campusId ?? undefined } }),
   });
 
   const students = useQuery({
-    queryKey: ["students", "list", status, courseId],
+    queryKey: ["students", "list", campusId, status, courseId],
     queryFn: () =>
       getStudentsFn({
         data: {
+          campusId: campusId ?? undefined,
           status: status === "all" ? undefined : status,
           courseId: courseId === "all" ? undefined : courseId,
         },

@@ -24,37 +24,39 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 import { ClickthroughChecklist } from "@/components/app/ClickthroughChecklist";
 
 export const Route = createFileRoute("/_auth/dashboard")({ component: Dashboard });
 
 function Dashboard() {
   const { isAdmin, hasPermission } = useAuth();
+  const { campusId } = useCampus();
   const today = new Date().toISOString().slice(0, 10);
 
   const todayCollection = useQuery({
-    queryKey: ["dash", "today", today],
-    queryFn: () => getDashTodayCollectionFn({ data: { today } }),
+    queryKey: ["dash", "today", campusId, today],
+    queryFn: () => getDashTodayCollectionFn({ data: { today, campusId: campusId ?? undefined } }),
   });
 
   const dues = useQuery({
-    queryKey: ["dash", "dues", today],
-    queryFn: () => getDashDuesFn({ data: { today } }),
+    queryKey: ["dash", "dues", campusId, today],
+    queryFn: () => getDashDuesFn({ data: { today, campusId: campusId ?? undefined } }),
   });
 
   const recent = useQuery({
-    queryKey: ["dash", "recent"],
-    queryFn: () => getDashRecentPaymentsFn({ data: {} }),
+    queryKey: ["dash", "recent", campusId],
+    queryFn: () => getDashRecentPaymentsFn({ data: { campusId: campusId ?? undefined } }),
   });
 
   const newEnrollments = useQuery({
-    queryKey: ["dash", "new-enroll"],
-    queryFn: () => getDashNewEnrollmentsFn({ data: {} }),
+    queryKey: ["dash", "new-enroll", campusId],
+    queryFn: () => getDashNewEnrollmentsFn({ data: { campusId: campusId ?? undefined } }),
   });
 
   const batches = useQuery({
-    queryKey: ["dash", "batches"],
-    queryFn: () => getDashBatchesFn({ data: {} }),
+    queryKey: ["dash", "batches", campusId],
+    queryFn: () => getDashBatchesFn({ data: { campusId: campusId ?? undefined } }),
   });
 
   return (

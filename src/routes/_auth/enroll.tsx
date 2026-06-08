@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoursesFn } from "@/fns/courses";
 import { getBatchesFn, createBatchFn } from "@/fns/courses";
@@ -30,7 +30,13 @@ import {
 import { toast } from "sonner";
 import { UserPlus, ChevronLeft, ChevronRight, ShieldAlert, Check } from "lucide-react";
 import { inr } from "@/lib/format";
-import { PLAN_MONTHS, PLAN_LABEL, evenSplit, type PlanKind } from "@/lib/installments";
+import {
+  PLAN_LABEL,
+  evenSplit,
+  buildInstallmentSchedule,
+  type PlanKind,
+  type LateJoinerMode,
+} from "@/lib/installments";
 import { logAudit } from "@/lib/audit";
 import { useAuth } from "@/lib/auth";
 import { useCampus } from "@/lib/campus";
@@ -99,6 +105,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     board: "",
     marks_10th: "",
     marks_12th: "",
+    admission_date: new Date().toISOString().slice(0, 10),
   });
 
   const [fee, setFee] = useState({
@@ -109,6 +116,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     hostel_fee_monthly: 0,
     due_day: 5,
     plan_year: new Date().getFullYear(),
+    late_joiner_mode: "start_from_admission_month" as LateJoinerMode,
   });
   const [instAmounts, setInstAmounts] = useState<number[]>([]);
 
@@ -129,15 +137,31 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
   const selectedCourse = (courses.data as any[])?.find((c) => c.id === profile.course_id);
   const grossFee = Number(selectedCourse?.gross_fee || 0);
   const netPayable = Math.max(0, grossFee - Number(fee.concession_amount || 0));
-  const planMonths = PLAN_MONTHS[fee.plan];
-  const dueDates = useMemo(
-    () => planMonths.map(({ month }) => new Date(fee.plan_year, month, fee.due_day)),
-    [planMonths, fee.plan_year, fee.due_day],
+  const scheduleData = useMemo(
+    () =>
+      buildInstallmentSchedule({
+        plan: fee.plan,
+        planYear: fee.plan_year,
+        dueDay: fee.due_day,
+        admissionDate: profile.admission_date,
+        mode: fee.late_joiner_mode,
+      }),
+    [fee.plan, fee.plan_year, fee.due_day, profile.admission_date, fee.late_joiner_mode],
   );
+  const schedule = scheduleData.schedule;
+  const missedCount = scheduleData.missedCount;
+  const lateJoinerModeLabel =
+    fee.late_joiner_mode === "remaining_only"
+      ? "Remaining due months only"
+      : fee.late_joiner_mode === "start_from_admission_month"
+        ? "Start from admission month"
+        : fee.late_joiner_mode === "catchup_now"
+          ? "Catch-up now + remaining months"
+          : "Original full plan";
 
-  useMemo(() => {
-    setInstAmounts(evenSplit(netPayable, planMonths.length));
-  }, [fee.plan, netPayable]);
+  useEffect(() => {
+    setInstAmounts(evenSplit(netPayable, schedule.length));
+  }, [netPayable, schedule.length]);
 
   const sumInst = instAmounts.reduce((a, b) => a + Number(b || 0), 0);
   const amountMismatch = Math.abs(sumInst - netPayable) > 0.5;
@@ -146,11 +170,11 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     mutationFn: async () => {
       if (!campusId) throw new Error("Select a campus first");
       const admNo = await nextAdmissionNumberFn({ data: { year: "2025-26" } });
-      const installments = planMonths.map((m, i) => ({
-        installment_no: i + 1,
+      const installments = schedule.map((s, i) => ({
+        installment_no: s.installment_no || i + 1,
         amount: Number(instAmounts[i] || 0),
-        due_date: dueDates[i].toISOString().slice(0, 10),
-        month_label: m.label,
+        due_date: s.due_date,
+        month_label: s.month_label,
       }));
       const result = await createEnrollmentFn({
         data: {
@@ -159,7 +183,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             campus_id: campusId,
             admission_number: admNo,
             academic_year: "2025-26",
-            admission_date: new Date().toISOString().slice(0, 10),
+            admission_date: profile.admission_date,
           },
           feeAssignment: {
             course_id: profile.course_id,
@@ -209,6 +233,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     profile.permanent_address &&
     profile.father_name &&
     profile.father_mobile &&
+    profile.admission_date &&
     profile.course_id &&
     profile.batch_id;
   const canStep3 = grossFee > 0 && netPayable > 0 && !amountMismatch;
@@ -269,6 +294,13 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                   <SelectItem value="dropper">Dropper</SelectItem>
                 </SelectContent>
               </Select>
+            </Field>
+            <Field label="Admission Date *">
+              <Input
+                type="date"
+                value={profile.admission_date}
+                onChange={(e) => setProfile({ ...profile, admission_date: e.target.value })}
+              />
             </Field>
             <Field label="Mobile *">
               <Input
@@ -565,6 +597,26 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="Late Joiner Handling">
+              <Select
+                value={fee.late_joiner_mode}
+                onValueChange={(v: LateJoinerMode) => setFee({ ...fee, late_joiner_mode: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="remaining_only">Remaining due months only</SelectItem>
+                  <SelectItem value="start_from_admission_month">
+                    Start from admission month (July/Aug supported)
+                  </SelectItem>
+                  <SelectItem value="catchup_now">Catch-up now + remaining months</SelectItem>
+                  <SelectItem value="original">
+                    Keep original full plan (includes past due months)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Concession (₹)">
               <Input
                 type="number"
@@ -619,8 +671,15 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             <div className="grid grid-cols-3 gap-3 md:col-span-2">
               <Stat label="Concession" value={inr(Number(fee.concession_amount || 0))} />
               <Stat label="Net Payable" value={inr(netPayable)} accent />
-              <Stat label="Installments" value={String(planMonths.length)} />
+              <Stat label="Installments" value={String(schedule.length)} />
             </div>
+            {missedCount > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-2">
+                {missedCount} plan month(s) are before admission date. Current mode:{" "}
+                <strong>{lateJoinerModeLabel}</strong>
+                .
+              </div>
+            )}
             <div className="md:col-span-2">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-sm font-semibold">Instalment Schedule (amounts editable)</div>
@@ -628,7 +687,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setInstAmounts(evenSplit(netPayable, planMonths.length))}
+                  onClick={() => setInstAmounts(evenSplit(netPayable, schedule.length))}
                 >
                   Auto-split evenly
                 </Button>
@@ -643,12 +702,12 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {planMonths.map((m, idx) => (
+                  {schedule.map((s, idx) => (
                     <TableRow key={idx}>
-                      <TableCell>{idx + 1}</TableCell>
-                      <TableCell>{m.label}</TableCell>
+                      <TableCell>{s.installment_no}</TableCell>
+                      <TableCell>{s.month_label}</TableCell>
                       <TableCell>
-                        {dueDates[idx]?.toLocaleDateString("en-IN", {
+                        {new Date(s.due_date).toLocaleDateString("en-IN", {
                           day: "2-digit",
                           month: "short",
                           year: "numeric",
@@ -710,9 +769,13 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             <Section title="Fees">
               <Row k="Gross" v={inr(grossFee)} />
               <Row k="Plan" v={PLAN_LABEL[fee.plan]} />
+              <Row
+                k="Late Joiner Mode"
+                v={lateJoinerModeLabel}
+              />
               <Row k="Concession" v={inr(Number(fee.concession_amount || 0))} />
               <Row k="Net Payable" v={inr(netPayable)} />
-              <Row k="Installments" v={String(planMonths.length)} />
+              <Row k="Installments" v={String(schedule.length)} />
             </Section>
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep(2)}>

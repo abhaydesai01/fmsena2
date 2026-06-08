@@ -59,7 +59,12 @@ const navItems: NavItem[] = [
     roles: ["ADMIN", "ACCOUNTANT", "ENROLLMENT_OFFICER"],
   },
   { to: "/enroll", label: "Enroll Student", icon: UserPlus, permission: "canEnrollStudents" },
-  { to: "/collect", label: "Collect Fee", icon: Receipt, roles: ["ADMIN", "ACCOUNTANT"] },
+  {
+    to: "/collect",
+    label: "Collect Fee",
+    icon: Receipt,
+    roles: ["ADMIN", "ACCOUNTANT", "ENROLLMENT_OFFICER"],
+  },
   { to: "/courses", label: "Courses & Batches", icon: BookOpen, roles: ["ADMIN"] },
   { to: "/defaulters", label: "Defaulters", icon: AlertTriangle, roles: ["ADMIN", "ACCOUNTANT"] },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN", "ACCOUNTANT"] },

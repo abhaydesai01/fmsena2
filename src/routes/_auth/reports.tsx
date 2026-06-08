@@ -39,11 +39,13 @@ import {
 import { inr, fmtDate, modeLabel, exportCSV } from "@/lib/format";
 import { PLAN_LABEL, type PlanKind } from "@/lib/installments";
 import { useAuth } from "@/lib/auth";
+import { useCampus } from "@/lib/campus";
 
 export const Route = createFileRoute("/_auth/reports")({ component: Page });
 
 function Page() {
   const { hasPermission } = useAuth();
+  const { campusId } = useCampus();
   const canExportReports = hasPermission("canExportReports");
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = (() => {
@@ -123,27 +125,29 @@ function Page() {
           <CollectionsReport
             from={from}
             to={to}
+            campusId={campusId}
             showAggregate={hasPermission("canViewAggregateFinancials")}
             canExport={canExportReports}
           />
         </TabsContent>
         <TabsContent value="outstanding" className="mt-4">
           <OutstandingReport
+            campusId={campusId}
             showAggregate={hasPermission("canViewAggregateFinancials")}
             canExport={canExportReports}
           />
         </TabsContent>
         <TabsContent value="monthly" className="mt-4">
-          <MonthlyDuesReport canExport={canExportReports} />
+          <MonthlyDuesReport campusId={campusId} canExport={canExportReports} />
         </TabsContent>
         <TabsContent value="batches" className="mt-4">
-          <CourseReport />
+          <CourseReport campusId={campusId} />
         </TabsContent>
         <TabsContent value="concessions" className="mt-4">
-          <ConcessionsReport canExport={canExportReports} />
+          <ConcessionsReport campusId={campusId} canExport={canExportReports} />
         </TabsContent>
         <TabsContent value="upgrades" className="mt-4">
-          <PlanUpgradesReport canExport={canExportReports} />
+          <PlanUpgradesReport campusId={campusId} canExport={canExportReports} />
         </TabsContent>
       </Tabs>
     </div>
@@ -153,17 +157,19 @@ function Page() {
 function CollectionsReport({
   from,
   to,
+  campusId,
   showAggregate,
   canExport,
 }: {
   from: string;
   to: string;
+  campusId: string | null;
   showAggregate: boolean;
   canExport: boolean;
 }) {
   const q = useQuery({
-    queryKey: ["report", "collections", from, to],
-    queryFn: () => getCollectionsReportFn({ data: { from, to } }),
+    queryKey: ["report", "collections", campusId, from, to],
+    queryFn: () => getCollectionsReportFn({ data: { from, to, campusId: campusId ?? undefined } }),
   });
 
   const totals = useMemo(() => {
@@ -280,15 +286,17 @@ function CollectionsReport({
 }
 
 function OutstandingReport({
+  campusId,
   showAggregate,
   canExport,
 }: {
+  campusId: string | null;
   showAggregate: boolean;
   canExport: boolean;
 }) {
   const q = useQuery({
-    queryKey: ["report", "outstanding"],
-    queryFn: () => getOutstandingReportFn({ data: {} }),
+    queryKey: ["report", "outstanding", campusId],
+    queryFn: () => getOutstandingReportFn({ data: { campusId: campusId ?? undefined } }),
   });
   if (q.isLoading) return <Loading />;
   const list = (q.data as any[]) || [];
@@ -366,7 +374,7 @@ function OutstandingReport({
   );
 }
 
-function MonthlyDuesReport({ canExport }: { canExport: boolean }) {
+function MonthlyDuesReport({ campusId, canExport }: { campusId: string | null; canExport: boolean }) {
   const now = new Date();
   const [month, setMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
@@ -374,8 +382,9 @@ function MonthlyDuesReport({ canExport }: { canExport: boolean }) {
   const [statusFilter, setStatusFilter] = useState("all");
 
   const q = useQuery({
-    queryKey: ["report", "monthly-dues", month, statusFilter],
-    queryFn: () => getMonthlyDuesReportFn({ data: { month, statusFilter } }),
+    queryKey: ["report", "monthly-dues", campusId, month, statusFilter],
+    queryFn: () =>
+      getMonthlyDuesReportFn({ data: { month, statusFilter, campusId: campusId ?? undefined } }),
   });
 
   const totals = useMemo(() => {
@@ -514,10 +523,10 @@ function MonthlyDuesReport({ canExport }: { canExport: boolean }) {
   );
 }
 
-function CourseReport() {
+function CourseReport({ campusId }: { campusId: string | null }) {
   const q = useQuery({
-    queryKey: ["report", "by-course"],
-    queryFn: () => getCourseReportFn({ data: {} }),
+    queryKey: ["report", "by-course", campusId],
+    queryFn: () => getCourseReportFn({ data: { campusId: campusId ?? undefined } }),
   });
   if (q.isLoading) return <Loading />;
   return (
@@ -566,10 +575,10 @@ function CourseReport() {
   );
 }
 
-function ConcessionsReport({ canExport }: { canExport: boolean }) {
+function ConcessionsReport({ campusId, canExport }: { campusId: string | null; canExport: boolean }) {
   const q = useQuery({
-    queryKey: ["report", "concessions"],
-    queryFn: () => getConcessionsReportFn({ data: {} }),
+    queryKey: ["report", "concessions", campusId],
+    queryFn: () => getConcessionsReportFn({ data: { campusId: campusId ?? undefined } }),
   });
   const totals = useMemo(() => {
     const list = (q.data as any[]) || [];
@@ -668,10 +677,10 @@ function ConcessionsReport({ canExport }: { canExport: boolean }) {
   );
 }
 
-function PlanUpgradesReport({ canExport }: { canExport: boolean }) {
+function PlanUpgradesReport({ campusId, canExport }: { campusId: string | null; canExport: boolean }) {
   const q = useQuery({
-    queryKey: ["report", "plan-upgrades"],
-    queryFn: () => getPlanUpgradesReportFn({ data: {} }),
+    queryKey: ["report", "plan-upgrades", campusId],
+    queryFn: () => getPlanUpgradesReportFn({ data: { campusId: campusId ?? undefined } }),
   });
   if (q.isLoading) return <Loading />;
   const list = (q.data as any[]) || [];

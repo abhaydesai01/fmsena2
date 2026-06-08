@@ -21,6 +21,32 @@ const MONGO_URI =
 const DB_NAME = process.env.MONGO_DB_NAME || "fmsena";
 
 let _client: MongoClient | null = null;
+let _indexesReady = false;
+
+async function ensureIndexes(db: Db) {
+  if (_indexesReady) return;
+  _indexesReady = true;
+  try {
+    await Promise.all([
+      db.collection("students").createIndex({ campus_id: 1, status: 1 }),
+      db.collection("students").createIndex({ campus_id: 1, course_id: 1, status: 1 }),
+      db.collection("students").createIndex({ admission_number: 1 }, { sparse: true }),
+      db.collection("students").createIndex({ mobile: 1 }, { sparse: true }),
+      db.collection("installments").createIndex({ student_id: 1, installment_no: 1 }),
+      db.collection("installments").createIndex({ student_id: 1, status: 1, due_date: 1 }),
+      db.collection("installments").createIndex({ status: 1, due_date: 1 }),
+      db.collection("payments").createIndex({ payment_date: 1, status: 1 }),
+      db.collection("payments").createIndex({ student_id: 1, created_at: -1 }),
+      db.collection("payments").createIndex({ created_at: -1 }),
+      db.collection("fee_assignments").createIndex({ student_id: 1 }),
+      db.collection("courses").createIndex({ campus_id: 1, is_active: 1 }),
+      db.collection("batches").createIndex({ campus_id: 1, course_id: 1, status: 1 }),
+    ]);
+  } catch (e) {
+    // Index creation should never block request handling.
+    console.warn("Index warm-up skipped:", (e as Error)?.message || e);
+  }
+}
 
 export async function getDb(): Promise<Db> {
   if (!_client) {
@@ -30,7 +56,9 @@ export async function getDb(): Promise<Db> {
     });
     await _client.connect();
   }
-  return _client.db(DB_NAME);
+  const db = _client.db(DB_NAME);
+  await ensureIndexes(db);
+  return db;
 }
 
 /** Convert a MongoDB document (_id) to a plain object with string `id` field */

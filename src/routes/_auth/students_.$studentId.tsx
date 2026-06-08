@@ -50,7 +50,15 @@ import {
 import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { PLAN_LABEL, PLAN_NEXT, PLAN_MONTHS, evenSplit, type PlanKind } from "@/lib/installments";
+import {
+  PLAN_LABEL,
+  PLAN_NEXT,
+  PLAN_MONTHS,
+  evenSplit,
+  buildInstallmentSchedule,
+  type PlanKind,
+  type LateJoinerMode,
+} from "@/lib/installments";
 import type { AppRole } from "@/lib/permissions";
 import {
   getStudentFn,
@@ -82,6 +90,7 @@ function Page() {
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
   const [upgradePlanOpen, setUpgradePlanOpen] = useState(false);
+  const [replanOpen, setReplanOpen] = useState(false);
   const [editInstId, setEditInstId] = useState<string | null>(null);
   const [editAmt, setEditAmt] = useState<number>(0);
   const [profileEdit, setProfileEdit] = useState(false);
@@ -193,6 +202,9 @@ function Page() {
   const showConcessionBanner =
     hasOverdue && hasConcession && Number(fa.concession_cancelled_amount || 0) === 0;
   const showUpgradeBanner = hasOverdue && currentPlan && PLAN_NEXT[currentPlan];
+  const hasUnpaidInstallments = (installments.data || []).some(
+    (i: any) => Number(i.amount) - Number(i.amount_paid) > 0,
+  );
 
   return (
     <div className="space-y-4">
@@ -232,6 +244,11 @@ function Page() {
               {isAdmin && currentPlan && PLAN_NEXT[currentPlan] && (
                 <Button variant="outline" size="sm" onClick={() => setUpgradePlanOpen(true)}>
                   <TrendingUp className="h-4 w-4" /> Upgrade Plan
+                </Button>
+              )}
+              {isAdmin && hasUnpaidInstallments && (
+                <Button variant="outline" size="sm" onClick={() => setReplanOpen(true)}>
+                  <TrendingUp className="h-4 w-4" /> Re-plan Late Joiner
                 </Button>
               )}
               {hasPermission("canCancelConcession") &&
@@ -1123,6 +1140,21 @@ function Page() {
               }}
             />
           )}
+          {fa && isAdmin && (
+            <ReplanLateJoinerDialog
+              open={replanOpen}
+              onClose={() => setReplanOpen(false)}
+              student={s}
+              feeAssignment={fa}
+              currentPlan={currentPlan}
+              installments={installments.data || []}
+              onDone={() => {
+                qc.invalidateQueries({ queryKey: ["student", studentId, "fee-assignment"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "installments"] });
+                qc.invalidateQueries({ queryKey: ["student", studentId, "plan-upgrades"] });
+              }}
+            />
+          )}
         </>
       )}
     </div>
@@ -1598,6 +1630,246 @@ function UpgradePlanDialog({
           </Button>
           <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
             {submit.isPending ? "Upgrading…" : "Confirm upgrade"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReplanLateJoinerDialog({
+  open,
+  onClose,
+  student,
+  feeAssignment,
+  currentPlan,
+  installments,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  student: any;
+  feeAssignment: any;
+  currentPlan: PlanKind | null;
+  installments: any[];
+  onDone: () => void;
+}) {
+  const { fullName, role, user } = useAuth();
+  const [plan, setPlan] = useState<PlanKind>(currentPlan ?? "plan_3");
+  const [lateMode, setLateMode] = useState<LateJoinerMode>("start_from_admission_month");
+  const [admissionDate, setAdmissionDate] = useState(
+    student?.admission_date || new Date().toISOString().slice(0, 10),
+  );
+  const [planYear, setPlanYear] = useState(
+    new Date(student?.admission_date || new Date()).getFullYear(),
+  );
+  const [dueDay, setDueDay] = useState(5);
+  const [reason, setReason] = useState("Late joiner installment re-plan");
+
+  const schedule = buildInstallmentSchedule({
+    plan,
+    planYear,
+    dueDay,
+    admissionDate,
+    mode: lateMode,
+  }).schedule;
+  const lockedInstallments = installments.filter((i: any) => Number(i.amount_paid) > 0);
+  const replaceableInstallments = installments.filter((i: any) => Number(i.amount_paid) === 0);
+  const lockedCount = lockedInstallments.length;
+  const lockedAmount = lockedInstallments.reduce((sum: number, i: any) => sum + Number(i.amount), 0);
+  const remainingForReplan = Math.max(0, Number(feeAssignment.net_payable) - lockedAmount);
+  const scheduleTail = schedule.slice(lockedCount);
+  const previewTargetRows =
+    scheduleTail.length > 0
+      ? scheduleTail
+      : [
+          {
+            installment_no: lockedCount + 1,
+            due_date: admissionDate,
+            month_label: "At Admission",
+          },
+        ];
+  const previewSplits = evenSplit(remainingForReplan, previewTargetRows.length);
+  const previewRows = previewTargetRows.map((row, idx) => ({
+    installment_no: lockedCount + idx + 1,
+    due_date: row.due_date,
+    month_label: row.month_label,
+    amount: previewSplits[idx] ?? 0,
+  }));
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const remaining = Number(feeAssignment.net_payable) - lockedAmount;
+      if (remaining < 0) {
+        throw new Error("Paid/locked installments exceed net payable. Review installment amounts.");
+      }
+      if (replaceableInstallments.length === 0) {
+        throw new Error("No unpaid installments available for re-plan");
+      }
+      const newRows = previewRows.map((row) => ({
+        installment_no: row.installment_no,
+        amount: row.amount,
+        due_date: row.due_date,
+        month_label: row.month_label,
+      }));
+
+      await upgradePlanFn({
+        data: {
+          student_id: student.id,
+          fee_assignment_id: feeAssignment.id,
+          from_plan: currentPlan ?? plan,
+          to_plan: plan,
+          reason: reason || "Late joiner re-plan",
+          performed_by: user?.id ?? null,
+          performed_by_name: fullName,
+          new_installments: newRows,
+          delete_installment_ids: replaceableInstallments.map((i: any) => i.id),
+        },
+      });
+      await logAudit({
+        actorName: fullName,
+        actorRole: role,
+        action: "replan_late_joiner",
+        entityType: "student",
+        entityId: student.id,
+        oldValue: { plan: currentPlan ?? plan },
+        newValue: {
+          plan,
+          mode: lateMode,
+          admission_date: admissionDate,
+          due_day: dueDay,
+          regenerated_installments: newRows.length,
+        },
+        reason,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Late-joiner plan updated");
+      onDone();
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.message || "Re-plan failed"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Re-plan Late Joiner</DialogTitle>
+          <DialogDescription>
+            Regenerates unpaid installments from the selected admission timing rule. Paid
+            installments stay untouched.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="mb-1 block text-xs">Plan *</Label>
+            <Select value={plan} onValueChange={(v: PlanKind) => setPlan(v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="plan_3">{PLAN_LABEL.plan_3}</SelectItem>
+                <SelectItem value="plan_4">{PLAN_LABEL.plan_4}</SelectItem>
+                <SelectItem value="plan_5">{PLAN_LABEL.plan_5}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Late Joiner Handling *</Label>
+            <Select value={lateMode} onValueChange={(v: LateJoinerMode) => setLateMode(v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="start_from_admission_month">
+                  Start from admission month (July/Aug supported)
+                </SelectItem>
+                <SelectItem value="remaining_only">Remaining due months only</SelectItem>
+                <SelectItem value="catchup_now">Catch-up now + remaining months</SelectItem>
+                <SelectItem value="original">Keep original full plan</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="mb-1 block text-xs">Admission Date</Label>
+              <Input
+                type="date"
+                value={admissionDate}
+                onChange={(e) => setAdmissionDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs">Plan Year</Label>
+              <Input
+                type="number"
+                value={planYear}
+                onChange={(e) => setPlanYear(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs">Due Day</Label>
+              <Input
+                type="number"
+                min={1}
+                max={28}
+                value={dueDay}
+                onChange={(e) => setDueDay(Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+            Generated installments: <strong>{schedule.length}</strong> · Locked (paid):{" "}
+            <strong>{lockedInstallments.length}</strong> · To regenerate:{" "}
+            <strong>{previewRows.length}</strong> · Remaining amount:{" "}
+            <strong>{inr(remainingForReplan)}</strong>
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Preview (new unpaid installments)</Label>
+            {replaceableInstallments.length === 0 ? (
+              <div className="rounded-md border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
+                All installments have payments. No rows available to regenerate.
+              </div>
+            ) : (
+              <div className="max-h-56 overflow-auto rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Month</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewRows.map((row) => (
+                      <TableRow key={`${row.installment_no}-${row.due_date}`}>
+                        <TableCell>{row.installment_no}</TableCell>
+                        <TableCell>{row.month_label}</TableCell>
+                        <TableCell>{fmtDate(row.due_date)}</TableCell>
+                        <TableCell className="text-right">{inr(row.amount)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Reason</Label>
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => submit.mutate()}
+            disabled={submit.isPending || replaceableInstallments.length === 0}
+          >
+            {submit.isPending ? "Updating…" : "Apply re-plan"}
           </Button>
         </DialogFooter>
       </DialogContent>

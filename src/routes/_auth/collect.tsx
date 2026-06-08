@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoursesFn } from "@/fns/courses";
 import { searchStudentsFn } from "@/fns/students";
@@ -86,6 +86,7 @@ function Page() {
   const qc = useQueryClient();
   const { q: initialQ } = Route.useSearch();
   const [q, setQ] = useState(initialQ ?? "");
+  const [debouncedQ, setDebouncedQ] = useState(initialQ ?? "");
   const [selected, setSelected] = useState<Student | null>(null);
   const [payInst, setPayInst] = useState<Inst | null>(null);
   const [lastReceipt, setLastReceipt] = useState<any>(null);
@@ -94,15 +95,22 @@ function Page() {
   const [studentStatusFilter, setStudentStatusFilter] = useState<string>("active");
   const [cancelConcessionOpen, setCancelConcessionOpen] = useState(false);
 
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedQ(q), 250);
+    return () => window.clearTimeout(id);
+  }, [q]);
+
   const courses = useQuery({
-    queryKey: ["collect", "courses"],
-    queryFn: () => getCoursesFn({ data: { activeOnly: true } }),
+    queryKey: ["collect", "courses", campusId],
+    queryFn: () =>
+      getCoursesFn({ data: { activeOnly: true, campusId: campusId ?? undefined } }),
   });
 
   const search = useQuery({
-    queryKey: ["collect", "search", q, campusId],
-    enabled: q.trim().length >= 2,
-    queryFn: () => searchStudentsFn({ data: { q: q.trim(), campusId: campusId ?? undefined } }),
+    queryKey: ["collect", "search", debouncedQ, campusId],
+    enabled: debouncedQ.trim().length >= 2,
+    queryFn: () =>
+      searchStudentsFn({ data: { q: debouncedQ.trim(), campusId: campusId ?? undefined } }),
   });
 
   const installments = useQuery({
@@ -228,7 +236,7 @@ function Page() {
             />
           </div>
 
-          {q.trim().length >= 2 && searchList.length > 0 && !selected && (
+          {debouncedQ.trim().length >= 2 && searchList.length > 0 && !selected && (
             <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-border">
               {searchList.map((s) => (
                 <button
@@ -247,7 +255,7 @@ function Page() {
               ))}
             </div>
           )}
-          {q.trim().length >= 2 && searchList.length === 0 && !search.isLoading && (
+          {debouncedQ.trim().length >= 2 && searchList.length === 0 && !search.isLoading && (
             <p className="mt-3 text-sm text-muted-foreground">No active students match.</p>
           )}
         </CardContent>

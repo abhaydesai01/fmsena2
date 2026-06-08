@@ -7,16 +7,32 @@ const safeOId = (id: string) => toObjectId(id) ?? (id as any);
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export const getDashTodayCollectionFn = createServerFn({ method: "GET" })
-  .inputValidator((d: { today: string }) => d)
+  .inputValidator((d: { today: string; campusId?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
     const docs = await db
       .collection("payments")
       .find({ payment_date: data.today, status: { $ne: "cancelled" } })
       .toArray();
-    const total = docs.reduce((s, p) => s + Number(p.amount), 0);
+    const filteredPayments = data.campusId
+      ? (() => {
+          const studentIds = [...new Set(docs.map((p) => p.student_id as string).filter(Boolean))];
+          if (!studentIds.length) return [];
+          return db
+            .collection("students")
+            .find({ _id: { $in: studentIds.map(safeOId) }, campus_id: data.campusId })
+            .project({ _id: 1 })
+            .toArray()
+            .then((students) => {
+              const allowed = new Set(students.map((s) => s._id.toString()));
+              return docs.filter((p) => allowed.has(String(p.student_id)));
+            });
+        })()
+      : Promise.resolve(docs);
+    const payments = await filteredPayments;
+    const total = payments.reduce((s, p) => s + Number(p.amount), 0);
     const byMode: Record<string, number> = {};
-    for (const p of docs) {
+    for (const p of payments) {
       const m = p.payment_mode as string;
       byMode[m] = (byMode[m] || 0) + Number(p.amount);
     }
@@ -24,10 +40,22 @@ export const getDashTodayCollectionFn = createServerFn({ method: "GET" })
   });
 
 export const getDashDuesFn = createServerFn({ method: "GET" })
-  .inputValidator((d: { today: string }) => d)
+  .inputValidator((d: { today: string; campusId?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
-    const docs = await db.collection("installments").find({}).toArray();
+    let studentIds: string[] | null = null;
+    if (data.campusId) {
+      const students = await db
+        .collection("students")
+        .find({ campus_id: data.campusId }, { projection: { _id: 1 } })
+        .toArray();
+      studentIds = students.map((s) => s._id.toString());
+      if (!studentIds.length) return { outstanding: 0, overdueCount: 0, dueToday: 0 };
+    }
+    const docs = await db
+      .collection("installments")
+      .find(studentIds ? { student_id: { $in: studentIds } } : {})
+      .toArray();
     const outstanding = docs.reduce(
       (s, i) => s + Math.max(0, Number(i.amount) - Number(i.amount_paid)),
       0,
@@ -43,57 +71,73 @@ export const getDashDuesFn = createServerFn({ method: "GET" })
     return { outstanding, overdueCount, dueToday };
   });
 
-export const getDashRecentPaymentsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const db = await getDb();
-  const docs = await db
-    .collection("payments")
-    .find({})
-    .sort({ created_at: -1 })
-    .limit(10)
-    .toArray();
-  const payments = toObjs(docs);
+export const getDashRecentPaymentsFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
+    const db = await getDb();
+    const docs = await db
+      .collection("payments")
+      .find({})
+      .sort({ created_at: -1 })
+      .limit(100)
+      .toArray();
+    const payments = toObjs(docs);
 
-  const studentIds = [...new Set(payments.map((p: any) => p.student_id).filter(Boolean))];
-  if (studentIds.length) {
+    const studentIds = [...new Set(payments.map((p: any) => p.student_id).filter(Boolean))];
+    if (!studentIds.length) return [];
+    const studentFilter: Record<string, unknown> = { _id: { $in: studentIds.map(safeOId) } };
+    if (data.campusId) studentFilter.campus_id = data.campusId;
     const students = await db
       .collection("students")
-      .find({ _id: { $in: studentIds.map(safeOId) } })
+      .find(studentFilter)
       .project({ full_name: 1, admission_number: 1 })
       .toArray();
     const sMap: Record<string, any> = {};
     for (const s of students) sMap[s._id.toString()] = s;
-    return payments.map((p: any) => ({
-      ...p,
-      student_name: sMap[p.student_id]?.full_name || null,
-    }));
-  }
-  return payments;
-});
+    return payments
+      .filter((p: any) => Boolean(sMap[p.student_id]))
+      .slice(0, 10)
+      .map((p: any) => ({
+        ...p,
+        student_name: sMap[p.student_id]?.full_name || null,
+      }));
+  });
 
-export const getDashNewEnrollmentsFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getDashNewEnrollmentsFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
   const today = new Date();
   const sinceMonth = new Date(today);
   sinceMonth.setDate(sinceMonth.getDate() - 30);
   const sinceWeek = new Date(today);
   sinceWeek.setDate(sinceWeek.getDate() - 7);
+  const campusFilter = data.campusId ? { campus_id: data.campusId } : {};
 
   const [month, week] = await Promise.all([
     db.collection("students").countDocuments({
+      ...campusFilter,
       admission_date: { $gte: sinceMonth.toISOString().slice(0, 10) },
     }),
     db.collection("students").countDocuments({
+      ...campusFilter,
       admission_date: { $gte: sinceWeek.toISOString().slice(0, 10) },
     }),
   ]);
   return { month, week };
 });
 
-export const getDashBatchesFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getDashBatchesFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
+  const campusFilter = data.campusId ? { campus_id: data.campusId } : {};
   const [batchDocs, studentDocs] = await Promise.all([
-    db.collection("batches").find({}).toArray(),
-    db.collection("students").find({}, { projection: { batch_id: 1 } }).toArray(),
+    db.collection("batches").find(campusFilter).toArray(),
+    db
+      .collection("students")
+      .find(campusFilter, { projection: { batch_id: 1 } })
+      .toArray(),
   ]);
 
   const courseIds = [...new Set(batchDocs.map((b) => b.course_id as string).filter(Boolean))];
@@ -122,12 +166,26 @@ export const getDashBatchesFn = createServerFn({ method: "GET" }).handler(async 
 // ── Defaulters ────────────────────────────────────────────────────────────────
 
 export const getDefaultersFn = createServerFn({ method: "GET" })
-  .inputValidator((d: { today: string }) => d)
+  .inputValidator((d: { today: string; campusId?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
+    let studentIdsForCampus: string[] | null = null;
+    if (data.campusId) {
+      const students = await db
+        .collection("students")
+        .find({ campus_id: data.campusId }, { projection: { _id: 1 } })
+        .toArray();
+      studentIdsForCampus = students.map((s) => s._id.toString());
+      if (!studentIdsForCampus.length) return [];
+    }
+    const filter: Record<string, unknown> = {
+      due_date: { $lt: data.today },
+      status: { $ne: "paid" },
+    };
+    if (studentIdsForCampus) filter.student_id = { $in: studentIdsForCampus };
     const docs = await db
       .collection("installments")
-      .find({ due_date: { $lt: data.today }, status: { $ne: "paid" } })
+      .find(filter)
       .sort({ due_date: 1 })
       .limit(500)
       .toArray();
@@ -184,7 +242,7 @@ export const sendReminderFn = createServerFn({ method: "POST" })
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 export const getCollectionsReportFn = createServerFn({ method: "GET" })
-  .inputValidator((d: { from: string; to: string }) => d)
+  .inputValidator((d: { from: string; to: string; campusId?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
     const docs = await db
@@ -199,33 +257,47 @@ export const getCollectionsReportFn = createServerFn({ method: "GET" })
     const payments = toObjs(docs);
 
     const studentIds = [...new Set(payments.map((p: any) => p.student_id).filter(Boolean))];
+    const studentFilter: Record<string, unknown> = { _id: { $in: studentIds.map(safeOId) } };
+    if (data.campusId) studentFilter.campus_id = data.campusId;
     const students = studentIds.length
-      ? await db.collection("students").find({ _id: { $in: studentIds.map(safeOId) } }).project({ full_name: 1, admission_number: 1 }).toArray()
+      ? await db
+          .collection("students")
+          .find(studentFilter)
+          .project({ full_name: 1, admission_number: 1 })
+          .toArray()
       : [];
     const sMap: Record<string, any> = {};
     for (const s of students) sMap[s._id.toString()] = s;
 
-    return payments.map((p: any) => ({
+    return payments
+      .filter((p: any) => Boolean(sMap[p.student_id]))
+      .map((p: any) => ({
       ...p,
       students: sMap[p.student_id]
         ? { full_name: sMap[p.student_id].full_name, admission_number: sMap[p.student_id].admission_number }
         : null,
-    }));
+      }));
   });
 
-export const getOutstandingReportFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getOutstandingReportFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
   const today = new Date().toISOString().slice(0, 10);
+  const studentFilter: Record<string, unknown> = {};
+  if (data.campusId) studentFilter.campus_id = data.campusId;
+  const students = await db
+    .collection("students")
+    .find(studentFilter)
+    .project({ _id: 1, full_name: 1, admission_number: 1, course_id: 1 })
+    .toArray();
+  const studentIds = students.map((s) => s._id.toString());
+  if (!studentIds.length) return [];
   const docs = await db
     .collection("installments")
-    .find({ status: { $ne: "paid" } })
+    .find({ status: { $ne: "paid" }, student_id: { $in: studentIds } })
     .limit(2000)
     .toArray();
-
-  const studentIds = [...new Set(docs.map((i) => i.student_id as string).filter(Boolean))];
-  const students = studentIds.length
-    ? await db.collection("students").find({ _id: { $in: studentIds.map(safeOId) } }).toArray()
-    : [];
 
   const courseIds = [...new Set(students.map((s) => s.course_id as string).filter(Boolean))];
   const courses = courseIds.length
@@ -251,7 +323,7 @@ export const getOutstandingReportFn = createServerFn({ method: "GET" }).handler(
 });
 
 export const getMonthlyDuesReportFn = createServerFn({ method: "GET" })
-  .inputValidator((d: { month: string; statusFilter?: string }) => d)
+  .inputValidator((d: { month: string; statusFilter?: string; campusId?: string }) => d)
   .handler(async ({ data }) => {
     const db = await getDb();
     const [y, m] = data.month.split("-").map(Number);
@@ -262,6 +334,15 @@ export const getMonthlyDuesReportFn = createServerFn({ method: "GET" })
     const filter: Record<string, any> = { due_date: { $gte: start, $lte: end } };
     if (data.statusFilter && data.statusFilter !== "all") filter.status = data.statusFilter;
 
+    if (data.campusId) {
+      const students = await db
+        .collection("students")
+        .find({ campus_id: data.campusId }, { projection: { _id: 1 } })
+        .toArray();
+      const ids = students.map((s) => s._id.toString());
+      if (!ids.length) return [];
+      filter.student_id = { $in: ids };
+    }
     const docs = await db.collection("installments").find(filter).sort({ due_date: 1 }).toArray();
     const installments = toObjs(docs);
 
@@ -296,9 +377,13 @@ export const getMonthlyDuesReportFn = createServerFn({ method: "GET" })
     });
   });
 
-export const getCourseReportFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getCourseReportFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
-  const courses = await db.collection("courses").find({}).project({ name: 1 }).toArray();
+  const courseFilter: Record<string, unknown> = {};
+  if (data.campusId) courseFilter.campus_id = data.campusId;
+  const courses = await db.collection("courses").find(courseFilter).project({ name: 1 }).toArray();
 
   return Promise.all(
     courses.map(async (c) => {
@@ -321,7 +406,9 @@ export const getCourseReportFn = createServerFn({ method: "GET" }).handler(async
   );
 });
 
-export const getConcessionsReportFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getConcessionsReportFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
   const docs = await db
     .collection("fee_assignments")
@@ -331,8 +418,10 @@ export const getConcessionsReportFn = createServerFn({ method: "GET" }).handler(
   const fas = toObjs(docs);
 
   const studentIds = [...new Set(fas.map((f: any) => f.student_id).filter(Boolean))];
+  const studentFilter: Record<string, unknown> = { _id: { $in: studentIds.map(safeOId) } };
+  if (data.campusId) studentFilter.campus_id = data.campusId;
   const students = studentIds.length
-    ? await db.collection("students").find({ _id: { $in: studentIds.map(safeOId) } }).toArray()
+    ? await db.collection("students").find(studentFilter).toArray()
     : [];
   const sMap: Record<string, any> = {};
   for (const s of students) sMap[s._id.toString()] = s;
@@ -344,7 +433,9 @@ export const getConcessionsReportFn = createServerFn({ method: "GET" }).handler(
   const cMap: Record<string, string> = {};
   for (const c of courses) cMap[c._id.toString()] = c.name as string;
 
-  return fas.map((f: any) => {
+  return fas
+    .filter((f: any) => Boolean(sMap[f.student_id]))
+    .map((f: any) => {
     const s = sMap[f.student_id];
     return {
       ...f,
@@ -353,7 +444,7 @@ export const getConcessionsReportFn = createServerFn({ method: "GET" }).handler(
         courses: cMap[s.course_id] ? { name: cMap[s.course_id] } : null,
       } : null,
     };
-  });
+    });
 });
 
 export const getChecklistCountsFn = createServerFn({ method: "GET" }).handler(async () => {
@@ -368,7 +459,9 @@ export const getChecklistCountsFn = createServerFn({ method: "GET" }).handler(as
   return { courses, batches, students, installments, payments };
 });
 
-export const getPlanUpgradesReportFn = createServerFn({ method: "GET" }).handler(async () => {
+export const getPlanUpgradesReportFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { campusId?: string }) => d)
+  .handler(async ({ data }) => {
   const db = await getDb();
   const docs = await db
     .collection("plan_upgrades")
@@ -380,7 +473,9 @@ export const getPlanUpgradesReportFn = createServerFn({ method: "GET" }).handler
 
   const studentIds = [...new Set(upgrades.map((u: any) => u.student_id).filter(Boolean))];
   if (!studentIds.length) return upgrades;
-  const students = await db.collection("students").find({ _id: { $in: studentIds.map(safeOId) } }).toArray();
+  const studentFilter: Record<string, unknown> = { _id: { $in: studentIds.map(safeOId) } };
+  if (data.campusId) studentFilter.campus_id = data.campusId;
+  const students = await db.collection("students").find(studentFilter).toArray();
   const sMap: Record<string, any> = {};
   for (const s of students) sMap[s._id.toString()] = s;
 
@@ -391,7 +486,9 @@ export const getPlanUpgradesReportFn = createServerFn({ method: "GET" }).handler
   const cMap: Record<string, string> = {};
   for (const c of courses) cMap[c._id.toString()] = c.name as string;
 
-  return upgrades.map((u: any) => {
+  return upgrades
+    .filter((u: any) => Boolean(sMap[u.student_id]))
+    .map((u: any) => {
     const s = sMap[u.student_id];
     return {
       ...u,
@@ -400,5 +497,5 @@ export const getPlanUpgradesReportFn = createServerFn({ method: "GET" }).handler
         courses: cMap[s.course_id] ? { name: cMap[s.course_id] } : null,
       } : null,
     };
-  });
+    });
 });

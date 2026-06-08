@@ -3,6 +3,11 @@ export const SLAB_PCT: Record<string, number> = { slab_10: 10, slab_15: 15, slab
 
 // New fixed-month instalment plans (replaces old 3/4 split logic for new enrollments).
 export type PlanKind = "plan_3" | "plan_4" | "plan_5";
+export type LateJoinerMode =
+  | "original"
+  | "remaining_only"
+  | "catchup_now"
+  | "start_from_admission_month";
 
 // Months are 0-indexed (June = 5)
 export const PLAN_MONTHS: Record<PlanKind, { label: string; month: number }[]> = {
@@ -54,8 +59,10 @@ export function evenSplit(net: number, count: number): number[] {
 }
 
 export function calculateNetPayable(opts: {
-  grossFee: number; discountType: DiscountType;
-  roundedAmount?: number; specialAmount?: number;
+  grossFee: number;
+  discountType: DiscountType;
+  roundedAmount?: number;
+  specialAmount?: number;
 }): { netPayable: number; discountAmount: number; installmentCount: 3 | 4 } {
   const gross = Number(opts.grossFee || 0);
   if (opts.discountType === "round_off") {
@@ -85,4 +92,88 @@ export function defaultDueDates(admissionDate: Date, count: 3 | 4): Date[] {
     if (i === 0) d.setDate(d.getDate() + 7);
     return d;
   });
+}
+
+export type InstallmentScheduleRow = {
+  installment_no: number;
+  month_label: string;
+  due_date: string;
+};
+
+function monthGapPattern(plan: PlanKind): number[] {
+  const months = PLAN_MONTHS[plan].map((m) => m.month);
+  const gaps: number[] = [];
+  for (let i = 1; i < months.length; i++) gaps.push(months[i] - months[i - 1]);
+  return gaps;
+}
+
+function monthLabelForDate(date: Date): string {
+  const month = date.toLocaleString("en-IN", { month: "short" });
+  const year = date.getFullYear();
+  return `${month} ${year}`;
+}
+
+export function buildInstallmentSchedule(opts: {
+  plan: PlanKind;
+  planYear: number;
+  dueDay: number;
+  admissionDate: string;
+  mode: LateJoinerMode;
+}): { schedule: InstallmentScheduleRow[]; missedCount: number } {
+  const admissionIso = new Date(opts.admissionDate || new Date().toISOString().slice(0, 10))
+    .toISOString()
+    .slice(0, 10);
+
+  const base = PLAN_MONTHS[opts.plan].map((m) => {
+    const due = new Date(opts.planYear, m.month, opts.dueDay).toISOString().slice(0, 10);
+    return { month_label: m.label, due_date: due };
+  });
+  const missed = base.filter((r) => r.due_date < admissionIso);
+  const remaining = base.filter((r) => r.due_date >= admissionIso);
+
+  if (opts.mode === "start_from_admission_month") {
+    const count = PLAN_MONTHS[opts.plan].length;
+    const gaps = monthGapPattern(opts.plan);
+    const admissionDate = new Date(admissionIso);
+    const first = new Date(admissionDate);
+    const out: InstallmentScheduleRow[] = [
+      {
+        installment_no: 1,
+        month_label: `Join Month (${monthLabelForDate(first)})`,
+        due_date: first.toISOString().slice(0, 10),
+      },
+    ];
+    let cursor = new Date(first.getFullYear(), first.getMonth(), opts.dueDay);
+    for (let i = 1; i < count; i++) {
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + (gaps[i - 1] ?? 1), opts.dueDay);
+      out.push({
+        installment_no: i + 1,
+        month_label: monthLabelForDate(cursor),
+        due_date: cursor.toISOString().slice(0, 10),
+      });
+    }
+    return { schedule: out, missedCount: missed.length };
+  }
+
+  let rows: Array<{ month_label: string; due_date: string }> = [];
+  if (opts.mode === "original") {
+    rows = base;
+  } else if (opts.mode === "remaining_only") {
+    rows = remaining.length > 0 ? remaining : [{ month_label: "At Admission", due_date: admissionIso }];
+  } else {
+    const out: Array<{ month_label: string; due_date: string }> = [];
+    if (missed.length > 0) {
+      out.push({
+        month_label: `Catch-up (${missed.map((m) => m.month_label).join(" + ")})`,
+        due_date: admissionIso,
+      });
+    }
+    out.push(...remaining);
+    rows = out.length > 0 ? out : [{ month_label: "At Admission", due_date: admissionIso }];
+  }
+
+  return {
+    schedule: rows.map((r, i) => ({ ...r, installment_no: i + 1 })),
+    missedCount: missed.length,
+  };
 }
