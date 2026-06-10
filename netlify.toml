@@ -1,9 +1,17 @@
+## Build this Vite app and publish static client files
+[build]
+  command = "npm run build"
+  publish = "dist/client"
+
+## Proxy TanStack Start server function calls to backend (EC2)
+## Replace with your actual backend domain after EC2 setup.
 [[redirects]]
   from = "/_server/*"
-  to = "https://api.yourdomain.com/_server/:splat"
+  to = "http://13.201.222.133:3000/_server/:splat"
   status = 200
   force = true
 
+## SPA fallback for all frontend routes
 [[redirects]]
   from = "/*"
   to = "/index.html"
