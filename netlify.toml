@@ -7,7 +7,7 @@
 ## Replace with your actual backend domain after EC2 setup.
 [[redirects]]
   from = "/_server/*"
-  to = "http://13.201.222.133:3000/_server/:splat"
+  to = "http://13.201.222.133/_server/:splat"
   status = 200
   force = true
 
