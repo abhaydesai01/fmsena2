@@ -15,7 +15,9 @@ import {
   ExternalLink,
   Loader2,
 } from "lucide-react";
-import { useAuth, type Role } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+
+type Role = "admin" | "any";
 import { cn } from "@/lib/utils";
 
 type Status = "pass" | "warn" | "fail" | "loading";

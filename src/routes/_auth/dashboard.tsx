@@ -258,7 +258,7 @@ function Dashboard() {
               </Button>
             )}
             <Button asChild variant="default" className="w-full justify-start">
-              <Link to="/collect">
+              <Link to="/collect" search={{ q: undefined }}>
                 <Receipt className="h-4 w-4" /> Collect Fee
               </Link>
             </Button>
