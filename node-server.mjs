@@ -1,14 +1,14 @@
 // Node.js HTTP entry point for the TanStack Start fetch handler.
 // Serves static client assets from dist/client/ and delegates everything else
-// to the SSR/server-fn fetch handler exported by dist/server/server.js.
+// to the SSR/server-fn fetch handler exported by dist/server/index.js.
 
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, resolve, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import serverEntry from "./dist/server/server.js";
+import serverEntry from "./dist/server/index.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLIENT_DIR = resolve(__dirname, "dist/client");

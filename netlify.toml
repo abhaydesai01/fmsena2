@@ -1,21 +1,27 @@
-## Build the Vite app + generate index.html SPA shell via SSR
+# This app is a TanStack Start SSR application. It is served in full by the
+# Node server (node-server.mjs) running on EC2 — static assets, SSR pages,
+# and server functions all come from there.
+#
+# Netlify's only job is to provide an HTTPS front (the *.netlify.app domain)
+# in front of the HTTP-only EC2 box. Every request is proxied to EC2 so the
+# browser always talks to a single origin — this avoids SSR hydration
+# mismatches and server-function path issues.
+#
+# After EC2 gets a real domain + TLS, you can move DNS straight to EC2 and
+# retire this proxy.
+
 [build]
-  command = "npm run build:netlify"
+  # Nothing is actually published (every path is proxied below), but Netlify
+  # still requires a successful build + publish dir.
+  command = "npm run build"
   publish = "dist/client"
 
 [build.environment]
   NODE_VERSION = "20"
 
-## Proxy TanStack Start server function calls to backend (EC2)
-## Replace with your actual backend domain after EC2 setup.
-[[redirects]]
-  from = "/_server/*"
-  to = "http://13.201.222.133/_server/:splat"
-  status = 200
-  force = true
-
-## SPA fallback for all frontend routes
+# Proxy EVERYTHING to the EC2 backend (nginx :80 -> node-server.mjs :3000).
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "http://13.201.222.133/:splat"
   status = 200
+  force = true
