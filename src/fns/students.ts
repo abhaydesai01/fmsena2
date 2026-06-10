@@ -187,7 +187,7 @@ export const createEnrollmentFn = createServerFn({ method: "POST" })
     const faId = faResult.insertedId.toString();
 
     // Insert installments
-    const instRows = data.installments.map((inst) => ({
+    const joiningRows = data.installments.map((inst) => ({
       fee_assignment_id: faId,
       student_id: studentId,
       installment_no: inst.installment_no,
@@ -201,7 +201,28 @@ export const createEnrollmentFn = createServerFn({ method: "POST" })
       created_at: now,
       updated_at: now,
     }));
-    await db.collection("installments").insertMany(instRows);
+    const registrationFee = Number(data.feeAssignment?.registration_fee || 0);
+    const registrationDate = (data.student?.registration_date as string | undefined) || now.slice(0, 10);
+    const registrationRows =
+      registrationFee > 0
+        ? [
+            {
+              fee_assignment_id: faId,
+              student_id: studentId,
+              installment_no: 0,
+              amount: registrationFee,
+              amount_paid: registrationFee,
+              due_date: registrationDate,
+              month_label: "Registration Fee",
+              status: "paid",
+              late_fee: 0,
+              is_registration: true,
+              created_at: now,
+              updated_at: now,
+            },
+          ]
+        : [];
+    await db.collection("installments").insertMany([...registrationRows, ...joiningRows]);
 
     return { studentId, faId };
   });

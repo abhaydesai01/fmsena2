@@ -239,6 +239,102 @@ export const sendReminderFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getInstallmentDueBucketsFn = createServerFn({ method: "GET" })
+  .inputValidator((d: { today: string; campusId?: string }) => d)
+  .handler(async ({ data }) => {
+    const db = await getDb();
+    let studentIds: string[] | null = null;
+    if (data.campusId) {
+      const students = await db
+        .collection("students")
+        .find({ campus_id: data.campusId }, { projection: { _id: 1 } })
+        .toArray();
+      studentIds = students.map((s) => s._id.toString());
+      if (!studentIds.length) return { dueToday: [], dueThisWeek: [], overdue: [] };
+    }
+
+    const today = new Date(data.today);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(today.getDate() + 7);
+    const todayIso = today.toISOString().slice(0, 10);
+    const weekEndIso = weekEnd.toISOString().slice(0, 10);
+
+    const filter: Record<string, any> = {
+      status: { $ne: "paid" },
+      is_registration: { $ne: true },
+      due_date: { $lte: weekEndIso },
+    };
+    if (studentIds) filter.student_id = { $in: studentIds };
+    const docs = await db.collection("installments").find(filter).sort({ due_date: 1 }).toArray();
+    const rows = toObjs(docs);
+    const dueToday = rows.filter((r: any) => r.due_date === todayIso);
+    const dueThisWeek = rows.filter((r: any) => r.due_date > todayIso && r.due_date <= weekEndIso);
+    const overdue = rows.filter((r: any) => r.due_date < todayIso);
+    return { dueToday, dueThisWeek, overdue };
+  });
+
+export const runAutomatedRemindersFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { today: string; campusId?: string }) => d)
+  .handler(async ({ data }) => {
+    const db = await getDb();
+    const today = new Date(data.today);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const before7 = new Date(today);
+    before7.setDate(today.getDate() + 7);
+    const after7 = new Date(today);
+    after7.setDate(today.getDate() - 7);
+
+    const dueDates = [fmt(before7), fmt(today), fmt(after7)];
+    const studentsFilter: Record<string, any> = {};
+    if (data.campusId) studentsFilter.campus_id = data.campusId;
+    const students = await db
+      .collection("students")
+      .find(studentsFilter, { projection: { _id: 1, full_name: 1, mobile: 1 } })
+      .toArray();
+    const studentMap: Record<string, { full_name: string; mobile: string }> = {};
+    for (const s of students) studentMap[s._id.toString()] = { full_name: s.full_name, mobile: s.mobile };
+    const studentIds = Object.keys(studentMap);
+    if (!studentIds.length) return { created: 0 };
+
+    const pendingInst = await db
+      .collection("installments")
+      .find({
+        student_id: { $in: studentIds },
+        is_registration: { $ne: true },
+        status: { $ne: "paid" },
+        due_date: { $in: dueDates },
+      })
+      .toArray();
+
+    let created = 0;
+    for (const inst of pendingInst) {
+      const dueDate = String(inst.due_date);
+      let kind = "on_due";
+      if (dueDate === fmt(before7)) kind = "before_7_days";
+      else if (dueDate === fmt(after7)) kind = "after_7_days";
+      const reminderKey = `${inst.student_id}:${inst._id.toString()}:${kind}:${data.today}`;
+      const exists = await db.collection("reminders").findOne({ reminder_key: reminderKey });
+      if (exists) continue;
+      const student = studentMap[String(inst.student_id)];
+      if (!student?.mobile) continue;
+      const pending = Math.max(0, Number(inst.amount) - Number(inst.amount_paid));
+      await db.collection("reminders").insertOne({
+        reminder_key: reminderKey,
+        student_id: inst.student_id,
+        installment_id: inst._id.toString(),
+        recipient_mobile: student.mobile,
+        kind,
+        channel: "sms",
+        message: `Fee reminder: ${student.full_name}, installment due on ${dueDate}. Pending amount ${pending}.`,
+        triggered_by: "system",
+        language: "en",
+        created_at: new Date().toISOString(),
+      });
+      created += 1;
+    }
+    return { created };
+  });
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 export const getCollectionsReportFn = createServerFn({ method: "GET" })
@@ -277,6 +373,91 @@ export const getCollectionsReportFn = createServerFn({ method: "GET" })
         ? { full_name: sMap[p.student_id].full_name, admission_number: sMap[p.student_id].admission_number }
         : null,
       }));
+  });
+
+export const getStudentPaymentHistoryReportFn = createServerFn({ method: "GET" })
+  .inputValidator(
+    (d: {
+      from: string;
+      to: string;
+      campusId?: string;
+      q?: string;
+      mode?: string;
+      status?: string;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    const db = await getDb();
+    const paymentFilter: Record<string, any> = {
+      payment_date: { $gte: data.from, $lte: data.to },
+    };
+    if (data.mode && data.mode !== "all") paymentFilter.payment_mode = data.mode;
+    if (data.status && data.status !== "all") paymentFilter.status = data.status;
+
+    const q = String(data.q || "").trim();
+    let scopedStudentIds: string[] | null = null;
+    if (q || data.campusId) {
+      const studentFilter: Record<string, any> = {};
+      if (data.campusId) studentFilter.campus_id = data.campusId;
+      if (q) {
+        studentFilter.$or = [
+          { full_name: { $regex: q, $options: "i" } },
+          { admission_number: { $regex: q, $options: "i" } },
+          { mobile: { $regex: q, $options: "i" } },
+        ];
+      }
+      const students = await db
+        .collection("students")
+        .find(studentFilter, { projection: { _id: 1 } })
+        .toArray();
+      scopedStudentIds = students.map((s) => s._id.toString());
+      if (!scopedStudentIds.length) return [];
+      paymentFilter.student_id = { $in: scopedStudentIds };
+    }
+
+    const docs = await db
+      .collection("payments")
+      .find(paymentFilter)
+      .sort({ payment_date: -1, created_at: -1 })
+      .limit(2000)
+      .toArray();
+    const payments = toObjs(docs);
+    const studentIds = [...new Set(payments.map((p: any) => p.student_id).filter(Boolean))];
+    if (!studentIds.length) return [];
+
+    const students = await db
+      .collection("students")
+      .find({ _id: { $in: studentIds.map(safeOId) } })
+      .project({ full_name: 1, admission_number: 1, mobile: 1, course_id: 1 })
+      .toArray();
+    const sMap: Record<string, any> = {};
+    for (const s of students) sMap[s._id.toString()] = s;
+
+    const courseIds = [...new Set(students.map((s) => s.course_id as string).filter(Boolean))];
+    const courses = courseIds.length
+      ? await db
+          .collection("courses")
+          .find({ _id: { $in: courseIds.map(safeOId) } })
+          .project({ name: 1 })
+          .toArray()
+      : [];
+    const cMap: Record<string, string> = {};
+    for (const c of courses) cMap[c._id.toString()] = c.name as string;
+
+    return payments
+      .filter((p: any) => Boolean(sMap[p.student_id]))
+      .map((p: any) => {
+        const s = sMap[p.student_id];
+        return {
+          ...p,
+          students: {
+            full_name: s.full_name,
+            admission_number: s.admission_number,
+            mobile: s.mobile,
+            courses: s.course_id ? { name: cMap[s.course_id] || null } : null,
+          },
+        };
+      });
   });
 
 export const getOutstandingReportFn = createServerFn({ method: "GET" })

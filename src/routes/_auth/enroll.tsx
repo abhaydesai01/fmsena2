@@ -33,9 +33,8 @@ import { inr } from "@/lib/format";
 import {
   PLAN_LABEL,
   evenSplit,
-  buildInstallmentSchedule,
+  buildJoiningDateSchedule,
   type PlanKind,
-  type LateJoinerMode,
 } from "@/lib/installments";
 import { logAudit } from "@/lib/audit";
 import { useAuth } from "@/lib/auth";
@@ -105,7 +104,9 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     board: "",
     marks_10th: "",
     marks_12th: "",
-    admission_date: new Date().toISOString().slice(0, 10),
+    registration_date: new Date().toISOString().slice(0, 10),
+    joining_date: new Date().toISOString().slice(0, 10),
+    admission_type: "non_residential" as "non_residential" | "residential",
   });
 
   const [fee, setFee] = useState({
@@ -114,9 +115,6 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     concession_reason: "",
     transport_fee_monthly: 0,
     hostel_fee_monthly: 0,
-    due_day: 5,
-    plan_year: new Date().getFullYear(),
-    late_joiner_mode: "start_from_admission_month" as LateJoinerMode,
   });
   const [instAmounts, setInstAmounts] = useState<number[]>([]);
 
@@ -137,27 +135,16 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
   const selectedCourse = (courses.data as any[])?.find((c) => c.id === profile.course_id);
   const grossFee = Number(selectedCourse?.gross_fee || 0);
   const netPayable = Math.max(0, grossFee - Number(fee.concession_amount || 0));
-  const scheduleData = useMemo(
+  const isResidential = profile.admission_type === "residential" || profile.hostel_required;
+  const installmentCount = isResidential ? 5 : fee.plan === "plan_3" ? 3 : fee.plan === "plan_4" ? 4 : 5;
+  const schedule = useMemo(
     () =>
-      buildInstallmentSchedule({
-        plan: fee.plan,
-        planYear: fee.plan_year,
-        dueDay: fee.due_day,
-        admissionDate: profile.admission_date,
-        mode: fee.late_joiner_mode,
+      buildJoiningDateSchedule({
+        joiningDate: profile.joining_date,
+        count: installmentCount,
       }),
-    [fee.plan, fee.plan_year, fee.due_day, profile.admission_date, fee.late_joiner_mode],
+    [profile.joining_date, installmentCount],
   );
-  const schedule = scheduleData.schedule;
-  const missedCount = scheduleData.missedCount;
-  const lateJoinerModeLabel =
-    fee.late_joiner_mode === "remaining_only"
-      ? "Remaining due months only"
-      : fee.late_joiner_mode === "start_from_admission_month"
-        ? "Start from admission month"
-        : fee.late_joiner_mode === "catchup_now"
-          ? "Catch-up now + remaining months"
-          : "Original full plan";
 
   useEffect(() => {
     setInstAmounts(evenSplit(netPayable, schedule.length));
@@ -183,7 +170,7 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             campus_id: campusId,
             admission_number: admNo,
             academic_year: "2025-26",
-            admission_date: profile.admission_date,
+            admission_date: profile.joining_date,
           },
           feeAssignment: {
             course_id: profile.course_id,
@@ -191,8 +178,9 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             discount_amount: Number(fee.concession_amount || 0),
             discount_reason: fee.concession_reason || null,
             net_payable: netPayable,
-            plan_kind: fee.plan,
+            plan_kind: isResidential ? "plan_5" : fee.plan,
             registration_fee: Number(selectedCourse?.registration_fee || 0),
+            registration_fee_paid: Number(selectedCourse?.registration_fee || 0),
             material_fee: Number(selectedCourse?.material_fee || 0),
             transport_fee_monthly: profile.transport_required
               ? Number(fee.transport_fee_monthly)
@@ -211,8 +199,10 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
         newValue: {
           admission_number: admNo,
           net_payable: netPayable,
-          plan: fee.plan,
+          plan: isResidential ? "plan_5" : fee.plan,
           installments: installments.length,
+          joining_date: profile.joining_date,
+          registration_date: profile.registration_date,
           campus_id: campusId,
         },
       });
@@ -233,7 +223,8 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
     profile.permanent_address &&
     profile.father_name &&
     profile.father_mobile &&
-    profile.admission_date &&
+    profile.registration_date &&
+    profile.joining_date &&
     profile.course_id &&
     profile.batch_id;
   const canStep3 = grossFee > 0 && netPayable > 0 && !amountMismatch;
@@ -295,11 +286,18 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Admission Date *">
+            <Field label="Registration Date *">
               <Input
                 type="date"
-                value={profile.admission_date}
-                onChange={(e) => setProfile({ ...profile, admission_date: e.target.value })}
+                value={profile.registration_date}
+                onChange={(e) => setProfile({ ...profile, registration_date: e.target.value })}
+              />
+            </Field>
+            <Field label="Joining Date *">
+              <Input
+                type="date"
+                value={profile.joining_date}
+                onChange={(e) => setProfile({ ...profile, joining_date: e.target.value })}
               />
             </Field>
             <Field label="Mobile *">
@@ -455,6 +453,22 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                 onCheckedChange={(v) => setProfile({ ...profile, transport_required: v })}
               />
             </div>
+            <Field label="Type of Admission">
+              <Select
+                value={profile.admission_type}
+                onValueChange={(v: any) =>
+                  setProfile({ ...profile, admission_type: v as "non_residential" | "residential" })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="non_residential">Non-Residential</SelectItem>
+                  <SelectItem value="residential">Residential</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <div className="md:col-span-2 mt-2 border-t pt-3 text-sm font-semibold">
               Personal details (optional)
             </div>
@@ -582,7 +596,11 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
               </div>
             </div>
             <Field label="Instalment Plan *">
-              <Select value={fee.plan} onValueChange={(v: PlanKind) => setFee({ ...fee, plan: v })}>
+              <Select
+                value={isResidential ? "plan_5" : fee.plan}
+                onValueChange={(v: PlanKind) => setFee({ ...fee, plan: v })}
+                disabled={isResidential}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -597,48 +615,12 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Late Joiner Handling">
-              <Select
-                value={fee.late_joiner_mode}
-                onValueChange={(v: LateJoinerMode) => setFee({ ...fee, late_joiner_mode: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="remaining_only">Remaining due months only</SelectItem>
-                  <SelectItem value="start_from_admission_month">
-                    Start from admission month (July/Aug supported)
-                  </SelectItem>
-                  <SelectItem value="catchup_now">Catch-up now + remaining months</SelectItem>
-                  <SelectItem value="original">
-                    Keep original full plan (includes past due months)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
             <Field label="Concession (₹)">
               <Input
                 type="number"
                 min={0}
                 value={fee.concession_amount}
                 onChange={(e) => setFee({ ...fee, concession_amount: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Plan Year">
-              <Input
-                type="number"
-                value={fee.plan_year}
-                onChange={(e) => setFee({ ...fee, plan_year: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Due day of month">
-              <Input
-                type="number"
-                min={1}
-                max={28}
-                value={fee.due_day}
-                onChange={(e) => setFee({ ...fee, due_day: Number(e.target.value) })}
               />
             </Field>
             <Field label="Concession Reason" className="md:col-span-2">
@@ -673,11 +655,10 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
               <Stat label="Net Payable" value={inr(netPayable)} accent />
               <Stat label="Installments" value={String(schedule.length)} />
             </div>
-            {missedCount > 0 && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-2">
-                {missedCount} plan month(s) are before admission date. Current mode:{" "}
-                <strong>{lateJoinerModeLabel}</strong>
-                .
+            {isResidential && (
+              <div className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs text-primary md:col-span-2">
+                Residential student: standardized schedule applied (0, +60, +120, +150, +180 days
+                from Joining Date).
               </div>
             )}
             <div className="md:col-span-2">
@@ -768,11 +749,9 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
             </Section>
             <Section title="Fees">
               <Row k="Gross" v={inr(grossFee)} />
-              <Row k="Plan" v={PLAN_LABEL[fee.plan]} />
-              <Row
-                k="Late Joiner Mode"
-                v={lateJoinerModeLabel}
-              />
+              <Row k="Plan" v={PLAN_LABEL[isResidential ? "plan_5" : fee.plan]} />
+              <Row k="Registration Date" v={profile.registration_date} />
+              <Row k="Joining Date" v={profile.joining_date} />
               <Row k="Concession" v={inr(Number(fee.concession_amount || 0))} />
               <Row k="Net Payable" v={inr(netPayable)} />
               <Row k="Installments" v={String(schedule.length)} />

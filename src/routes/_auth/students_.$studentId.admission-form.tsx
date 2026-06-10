@@ -136,7 +136,8 @@ function AdmissionFormPage() {
               </div>
               <div className="ml-auto text-right text-[10.5px]">
                 <div className="font-semibold">Admission No: {String(s.admission_number || "—")}</div>
-                <div>Date: {fmtDate(String(s.admission_date || new Date().toISOString()))}</div>
+                <div>Registration: {fmtDate(String(s.registration_date || new Date().toISOString()))}</div>
+                <div>Joining: {fmtDate(String(s.joining_date || s.admission_date || new Date().toISOString()))}</div>
                 <div>Campus: {campus?.name || "—"}</div>
               </div>
             </div>
@@ -144,12 +145,10 @@ function AdmissionFormPage() {
 
           <div className="space-y-0.5">
             <FormLine label="Course" value={`${String(s.courses?.name || "—")} · ${String(s.batches?.name || "—")}`} />
-            <FormLine
-              label="Academic Year"
-              value={String(s.academic_year || "—")}
-              suffix={`NEET ${tick(courseStream === "NEET")}   K-CET ${tick(courseStream === "KCET")}`}
-            />
+            <FormLine label="Academic Year" value={String(s.academic_year || "—")} suffix={`NEET ${tick(courseStream === "NEET")}   K-CET ${tick(courseStream === "KCET")}`} />
             <FormLine label="No." value={String(s.admission_number || "—")} />
+            <FormLine label="Registration Date" value={fmtDate(String(s.registration_date || "—"))} />
+            <FormLine label="Joining Date" value={fmtDate(String(s.joining_date || s.admission_date || "—"))} />
             <FormLine label="1. Name" value={String(s.full_name || "—")} />
             <FormLine
               label="2. Gender"

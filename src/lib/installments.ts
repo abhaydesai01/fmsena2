@@ -37,6 +37,8 @@ export const PLAN_LABEL: Record<PlanKind, string> = {
   plan_5: "Plan 3 · 5 instalments",
 };
 
+export const STANDARD_INSTALLMENT_OFFSETS = [0, 60, 120, 150, 180] as const;
+
 export const PLAN_NEXT: Record<PlanKind, PlanKind | null> = {
   plan_3: "plan_4",
   plan_4: "plan_5",
@@ -99,6 +101,23 @@ export type InstallmentScheduleRow = {
   month_label: string;
   due_date: string;
 };
+
+export function buildJoiningDateSchedule(opts: {
+  joiningDate: string;
+  count: number;
+}): InstallmentScheduleRow[] {
+  const start = new Date(opts.joiningDate);
+  const offsets = STANDARD_INSTALLMENT_OFFSETS.slice(0, Math.max(1, Math.min(opts.count, 5)));
+  return offsets.map((days, idx) => {
+    const due = new Date(start);
+    due.setDate(due.getDate() + days);
+    return {
+      installment_no: idx + 1,
+      month_label: `Installment ${idx + 1}`,
+      due_date: due.toISOString().slice(0, 10),
+    };
+  });
+}
 
 function monthGapPattern(plan: PlanKind): number[] {
   const months = PLAN_MONTHS[plan].map((m) => m.month);

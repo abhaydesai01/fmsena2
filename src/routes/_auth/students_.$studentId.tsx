@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/app/PageHeader";
@@ -83,6 +83,11 @@ import { getCoursesFn, getBatchesFn } from "@/fns/courses";
 export const Route = createFileRoute("/_auth/students_/$studentId")({ component: Page });
 
 function Page() {
+  const location = useLocation();
+  if (location.pathname.endsWith("/admission-form")) {
+    return <Outlet />;
+  }
+
   const { studentId } = Route.useParams();
   const { isAdmin, fullName, role, user, hasPermission } = useAuth();
   const navigate = useNavigate();
@@ -187,12 +192,28 @@ function Page() {
   }
 
   const s = student.data;
+  const today = new Date().toISOString().slice(0, 10);
   const totalDue = (installments.data || []).reduce(
     (a, i) => a + Number(i.amount) - Number(i.amount_paid),
     0,
   );
   const totalPaid = (installments.data || []).reduce((a, i) => a + Number(i.amount_paid), 0);
-  const today = new Date().toISOString().slice(0, 10);
+  const registrationPaid = (installments.data || []).reduce(
+    (a, i: any) => a + (i.is_registration ? Number(i.amount_paid || 0) : 0),
+    0,
+  );
+  const pendingInstallments = (installments.data || []).filter(
+    (i: any) => !i.is_registration && Number(i.amount) - Number(i.amount_paid) > 0,
+  );
+  const upcomingDueDate =
+    pendingInstallments
+      .map((i: any) => String(i.due_date))
+      .sort((a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0))[0] || null;
+  const overdueAmount = (installments.data || []).reduce((a, i: any) => {
+    const remaining = Number(i.amount) - Number(i.amount_paid);
+    if (remaining > 0 && String(i.due_date) < today) return a + remaining;
+    return a;
+  }, 0);
   const hasOverdue = (installments.data || []).some(
     (i: any) => Number(i.amount) - Number(i.amount_paid) > 0 && i.due_date < today,
   );
@@ -319,10 +340,22 @@ function Page() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Total Paid</div>
+            <div className="text-xs text-muted-foreground">Total Course Fee</div>
+            <div className="text-2xl font-bold">{inr(Number(fa?.gross_fee || 0))}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Registration Paid</div>
+            <div className="text-2xl font-bold text-success">{inr(registrationPaid)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Installments Paid</div>
             <div className="text-2xl font-bold text-success">{inr(totalPaid)}</div>
           </CardContent>
         </Card>
@@ -334,10 +367,20 @@ function Page() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Status</div>
-            <div className="mt-1">
-              <StatusBadge status={s.status} />
-            </div>
+            <div className="text-xs text-muted-foreground">Pending Installments</div>
+            <div className="text-2xl font-bold">{pendingInstallments.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Upcoming Due Date</div>
+            <div className="text-lg font-bold">{upcomingDueDate ? fmtDate(upcomingDueDate) : "—"}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground">Overdue Amount</div>
+            <div className="text-2xl font-bold text-destructive">{inr(overdueAmount)}</div>
           </CardContent>
         </Card>
       </div>
@@ -802,14 +845,19 @@ function Page() {
                       {d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <a
-                        href={d.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs underline"
-                      >
-                        Open
-                      </a>
+                      <div className="flex justify-end gap-3 text-xs">
+                        <a
+                          href={d.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline"
+                        >
+                          Open
+                        </a>
+                        <a href={d.file_url} download={`${d.label || "document"}`} className="underline">
+                          Download
+                        </a>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

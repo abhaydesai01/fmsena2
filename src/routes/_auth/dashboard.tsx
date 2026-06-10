@@ -6,6 +6,8 @@ import {
   getDashRecentPaymentsFn,
   getDashNewEnrollmentsFn,
   getDashBatchesFn,
+  getInstallmentDueBucketsFn,
+  runAutomatedRemindersFn,
 } from "@/fns/reports";
 import { PageHeader } from "@/components/app/PageHeader";
 import { StatCard } from "@/components/app/StatCard";
@@ -58,6 +60,14 @@ function Dashboard() {
     queryKey: ["dash", "batches", campusId],
     queryFn: () => getDashBatchesFn({ data: { campusId: campusId ?? undefined } }),
   });
+  useQuery({
+    queryKey: ["dash", "reminder-sweep", campusId, today],
+    queryFn: () => runAutomatedRemindersFn({ data: { today, campusId: campusId ?? undefined } }),
+  });
+  const dueBuckets = useQuery({
+    queryKey: ["dash", "due-buckets", campusId, today],
+    queryFn: () => getInstallmentDueBucketsFn({ data: { today, campusId: campusId ?? undefined } }),
+  });
 
   return (
     <div className="space-y-6">
@@ -66,7 +76,7 @@ function Dashboard() {
         description="Today at a glance — collections, dues, and quick actions."
       />
 
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-6">
         {hasPermission("canViewAggregateFinancials") && (
           <StatCard
             label="Today's Collection"
@@ -100,6 +110,20 @@ function Dashboard() {
           icon={Users}
           tone="info"
           hint={`${newEnrollments.data?.week ?? 0} this week`}
+        />
+        <StatCard
+          label="Due This Week"
+          value={dueBuckets.data?.dueThisWeek?.length ?? 0}
+          icon={CalendarClock}
+          tone="warning"
+          hint="Upcoming installments in next 7 days"
+        />
+        <StatCard
+          label="Overdue Installments"
+          value={dueBuckets.data?.overdue?.length ?? 0}
+          icon={AlertTriangle}
+          tone="destructive"
+          hint="Unpaid past due installments"
         />
       </div>
 

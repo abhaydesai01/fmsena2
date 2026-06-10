@@ -3,11 +3,13 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getCollectionsReportFn,
+  getStudentPaymentHistoryReportFn,
   getOutstandingReportFn,
   getMonthlyDuesReportFn,
   getCourseReportFn,
   getConcessionsReportFn,
   getPlanUpgradesReportFn,
+  getInstallmentDueBucketsFn,
 } from "@/fns/reports";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Loading } from "@/components/app/Loading";
@@ -104,11 +106,17 @@ function Page() {
             <TabsTrigger value="collections">
               <Receipt className="h-4 w-4" /> Collections
             </TabsTrigger>
+            <TabsTrigger value="payment-history">
+              <Receipt className="h-4 w-4" /> Payment History
+            </TabsTrigger>
             <TabsTrigger value="outstanding">
               <AlertCircle className="h-4 w-4" /> Outstanding
             </TabsTrigger>
             <TabsTrigger value="monthly">
               <Calendar className="h-4 w-4" /> Monthly Dues
+            </TabsTrigger>
+            <TabsTrigger value="due-tracker">
+              <AlertCircle className="h-4 w-4" /> Due Tracker
             </TabsTrigger>
             <TabsTrigger value="batches">
               <BarChart3 className="h-4 w-4" /> By Course
@@ -130,6 +138,14 @@ function Page() {
             canExport={canExportReports}
           />
         </TabsContent>
+        <TabsContent value="payment-history" className="mt-4">
+          <PaymentHistoryReport
+            from={from}
+            to={to}
+            campusId={campusId}
+            canExport={canExportReports}
+          />
+        </TabsContent>
         <TabsContent value="outstanding" className="mt-4">
           <OutstandingReport
             campusId={campusId}
@@ -139,6 +155,9 @@ function Page() {
         </TabsContent>
         <TabsContent value="monthly" className="mt-4">
           <MonthlyDuesReport campusId={campusId} canExport={canExportReports} />
+        </TabsContent>
+        <TabsContent value="due-tracker" className="mt-4">
+          <DueTrackerReport campusId={campusId} canExport={canExportReports} />
         </TabsContent>
         <TabsContent value="batches" className="mt-4">
           <CourseReport campusId={campusId} />
@@ -150,6 +169,243 @@ function Page() {
           <PlanUpgradesReport campusId={campusId} canExport={canExportReports} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function PaymentHistoryReport({
+  from,
+  to,
+  campusId,
+  canExport,
+}: {
+  from: string;
+  to: string;
+  campusId: string | null;
+  canExport: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("all");
+  const [mode, setMode] = useState("all");
+  const report = useQuery({
+    queryKey: ["report", "payment-history", campusId, from, to, q, status, mode],
+    queryFn: () =>
+      getStudentPaymentHistoryReportFn({
+        data: {
+          from,
+          to,
+          q,
+          status,
+          mode,
+          campusId: campusId ?? undefined,
+        },
+      }),
+  });
+
+  const rows = (report.data as any[]) || [];
+  const total = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  return (
+    <div>
+      <Card className="mb-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-3">
+          <div>
+            <Label className="mb-1 block text-xs">Search Student</Label>
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Name / Admission # / Mobile"
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Status</Label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="success">Success</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs">Payment Mode</Label>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="mb-4 grid gap-4 sm:grid-cols-2">
+        <StatCard label="Transactions" value={rows.length} icon={Receipt} tone="info" />
+        <StatCard label="Total Amount" value={inr(total)} icon={IndianRupee} tone="success" />
+      </div>
+
+      {report.isLoading ? (
+        <Loading />
+      ) : (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Student-wise Payment History</CardTitle>
+            {canExport && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!rows.length}
+                onClick={() =>
+                  exportCSV(
+                    `student_payment_history_${from}_${to}.csv`,
+                    rows.map((r) => ({
+                      payment_date: r.payment_date,
+                      receipt_number: r.receipt_number,
+                      admission_number: r.students?.admission_number,
+                      student: r.students?.full_name,
+                      mobile: r.students?.mobile,
+                      course: r.students?.courses?.name,
+                      payment_mode: r.payment_mode,
+                      status: r.status,
+                      amount: r.amount,
+                      collected_by: r.collected_by_name,
+                    })),
+                  )
+                }
+              >
+                <Download className="h-4 w-4" /> Export
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Receipt</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Course</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r: any) => (
+                  <TableRow key={r.id}>
+                    <TableCell>{fmtDate(r.payment_date)}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.receipt_number}</TableCell>
+                    <TableCell>
+                      {r.student_id ? (
+                        <Link
+                          to="/students/$studentId"
+                          params={{ studentId: r.student_id }}
+                          className="hover:underline font-medium"
+                        >
+                          {r.students?.full_name}
+                        </Link>
+                      ) : (
+                        r.students?.full_name
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        {r.students?.admission_number} · {r.students?.mobile}
+                      </div>
+                    </TableCell>
+                    <TableCell>{r.students?.courses?.name || "—"}</TableCell>
+                    <TableCell>{modeLabel(r.payment_mode)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">{inr(r.amount)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function DueTrackerReport({ campusId, canExport }: { campusId: string | null; canExport: boolean }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const q = useQuery({
+    queryKey: ["report", "due-tracker", campusId, today],
+    queryFn: () => getInstallmentDueBucketsFn({ data: { today, campusId: campusId ?? undefined } }),
+  });
+  if (q.isLoading) return <Loading />;
+  const dueToday = (q.data?.dueToday as any[]) || [];
+  const dueThisWeek = (q.data?.dueThisWeek as any[]) || [];
+  const overdue = (q.data?.overdue as any[]) || [];
+  const allRows = [...overdue, ...dueToday, ...dueThisWeek];
+
+  return (
+    <div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+        <StatCard label="Due Today" value={dueToday.length} icon={Calendar} tone="warning" />
+        <StatCard
+          label="Due This Week"
+          value={dueThisWeek.length}
+          icon={AlertCircle}
+          tone="info"
+        />
+        <StatCard label="Overdue" value={overdue.length} icon={AlertCircle} tone="destructive" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Installment Due Tracker</CardTitle>
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!allRows.length}
+              onClick={() => exportCSV(`due_tracker_${today}.csv`, allRows)}
+            >
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Installment #</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Pending</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allRows.map((i: any) => (
+                <TableRow key={i.id}>
+                  <TableCell>{i.installment_no}</TableCell>
+                  <TableCell>{fmtDate(i.due_date)}</TableCell>
+                  <TableCell className="text-right">{inr(i.amount)}</TableCell>
+                  <TableCell className="text-right">{inr(i.amount_paid)}</TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {inr(Math.max(0, Number(i.amount) - Number(i.amount_paid)))}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={i.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

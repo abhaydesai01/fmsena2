@@ -14,6 +14,10 @@
     "deploy": "vite build && wrangler deploy",
     "build:railway": "vite build --config vite.config.railway.ts",
     "start": "node node-server.mjs",
+    "migrate:dates": "node scripts/migrate-joining-registration-dates.mjs",
+    "cron:reminders": "node scripts/cron-reminders.mjs",
+    "qa:core": "node scripts/qa-core-product.mjs",
+    "qa:regression": "node scripts/qa-regression-modules.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -90,6 +94,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "playwright": "^1.60.0",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
