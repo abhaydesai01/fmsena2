@@ -83,9 +83,29 @@ if (!looks_like_html) {
   process.exit(1);
 }
 
+// Strip the SSR-rendered React tree (between <!--$--> and <!--/$-->).
+// TanStack Router embeds a $_TSR manifest whose `routes` property is a
+// plain object — calling .find() on it in the client bundle throws
+// "d.find is not a function". Removing SSR content + the $tsr hydration
+// script forces TanStack Start to do a clean client-side render instead,
+// which avoids the hydration mismatch entirely.
+html = html.replace(/<!--\$-->[\s\S]*?<!--\/\$-->/g, "");
+
+// Remove the $tsr stream-barrier script (router hydration state).
+// Without it, TanStack Router falls back to pure CSR — safe for a static host.
+html = html.replace(/<script[^>]*class="\$tsr"[^>]*>[\s\S]*?<\/script>/g, "");
+
+// Also remove any standalone <section> Sonner notification portal that was
+// SSR-rendered — it will be re-created client-side.
+html = html.replace(
+  /<section[^>]*aria-label="Notifications[^"]*"[^>]*><\/section>/g,
+  "",
+);
+
 const outPath = resolve(__dirname, "../dist/client/index.html");
 await writeFile(outPath, html, "utf-8");
 console.log(
   `✓ Generated dist/client/index.html (${(html.length / 1024).toFixed(1)} KB)`,
 );
+console.log("  SSR content and $_TSR hydration state stripped → clean CSR shell.");
 console.log("  Netlify will serve this as the SPA entry point.");

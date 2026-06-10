@@ -30,11 +30,11 @@ export function CampusProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (!data || data.length === 0) return;
+    if (!Array.isArray(data) || data.length === 0) return;
     const stored = typeof window !== "undefined" ? localStorage.getItem(KEY) : null;
-    const valid = (data as Campus[]).find((c) => c.id === stored);
+    const valid = data.find((c) => c.id === stored);
     if (valid) setIdState(valid.id);
-    else setIdState((data as Campus[])[0].id);
+    else setIdState(data[0].id);
   }, [data]);
 
   const setCampusId = (id: string) => {
@@ -44,7 +44,7 @@ export function CampusProvider({ children }: { children: ReactNode }) {
     } catch {}
   };
 
-  const campusList = (data || []) as Campus[];
+  const campusList: Campus[] = Array.isArray(data) ? data : [];
   const campus = campusList.find((c) => c.id === campusId) || null;
 
   return (
