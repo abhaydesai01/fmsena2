@@ -18,7 +18,7 @@ import { createHash } from "crypto";
 // ─── CONFIG — edit these ───────────────────────────────────────────────────
 const MONGO_URI =
   process.env.MONGO_URI ||
-  "mongodb+srv://abhaydesai3_db_user:3HqcfRs5U35wH39a@cluster0.djydanj.mongodb.net/?appName=Cluster0";
+  "";
 const DB_NAME = process.env.MONGO_DB_NAME || "fmsena";
 
 const ADMIN_EMAIL = "admin@example.com";   // ← change to your email
@@ -44,6 +44,9 @@ const client = new MongoClient(MONGO_URI, {
 });
 
 try {
+  if (!MONGO_URI) {
+    throw new Error("MONGO_URI is required. Set it in your environment (.env).");
+  }
   await client.connect();
   console.log("✓ Connected to MongoDB");
 

@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { inr, fmtDate, modeLabel } from "@/lib/format";
 import { StatusBadge } from "@/components/app/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import {
   IndianRupee,
   AlertCircle,
@@ -24,6 +25,8 @@ import {
   Receipt,
   Search,
   AlertTriangle,
+  ArrowRight,
+  Clock3,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useCampus } from "@/lib/campus";
@@ -33,7 +36,7 @@ export const Route = createFileRoute("/_auth/dashboard")({ component: Dashboard 
 
 function Dashboard() {
   const { isAdmin, hasPermission } = useAuth();
-  const { campusId } = useCampus();
+  const { campusId, campus } = useCampus();
   const today = new Date().toISOString().slice(0, 10);
 
   const todayCollection = useQuery({
@@ -69,62 +72,112 @@ function Dashboard() {
     queryFn: () => getInstallmentDueBucketsFn({ data: { today, campusId: campusId ?? undefined } }),
   });
 
+  const dueTodayRows = dueBuckets.data?.dueToday ?? [];
+  const dueWeekRows = dueBuckets.data?.dueThisWeek ?? [];
+  const overdueRows = dueBuckets.data?.overdue ?? [];
+  const totalDueCount = dueTodayRows.length + dueWeekRows.length + overdueRows.length;
+  const lastUpdated = new Date();
+
+  const kpis: Array<{
+    key: string;
+    label: string;
+    value: string | number;
+    hint: string;
+    icon: typeof IndianRupee;
+    tone: "success" | "destructive" | "warning" | "info";
+    to: "/reports" | "/defaulters" | "/collect" | "/students";
+    show?: boolean;
+  }> = [
+    {
+      key: "today-collection",
+      label: "Today's Collection",
+      value: inr(todayCollection.data?.total ?? 0),
+      hint:
+        Object.entries(todayCollection.data?.byMode || {})
+          .map(([m, v]) => `${modeLabel(m)} ${inr(v as number)}`)
+          .join(" · ") || "No collections yet",
+      icon: IndianRupee,
+      tone: "success",
+      to: "/reports",
+      show: hasPermission("canViewAggregateFinancials"),
+    },
+    {
+      key: "pending-dues",
+      label: "Pending Dues",
+      value: inr(dues.data?.outstanding ?? 0),
+      hint: `${dues.data?.overdueCount ?? 0} overdue installments`,
+      icon: AlertCircle,
+      tone: "destructive",
+      to: "/defaulters",
+    },
+    {
+      key: "due-today",
+      label: "Due Today",
+      value: dueTodayRows.length,
+      hint: "Installments awaiting payment",
+      icon: CalendarClock,
+      tone: "warning",
+      to: "/collect",
+    },
+    {
+      key: "new-enrollments",
+      label: "New Enrollments",
+      value: newEnrollments.data?.month ?? 0,
+      hint: `${newEnrollments.data?.week ?? 0} this week`,
+      icon: Users,
+      tone: "info",
+      to: "/students",
+    },
+    {
+      key: "due-this-week",
+      label: "Due This Week",
+      value: dueWeekRows.length,
+      hint: "Upcoming installments in next 7 days",
+      icon: Clock3,
+      tone: "warning",
+      to: "/reports",
+    },
+    {
+      key: "overdue-installments",
+      label: "Overdue Installments",
+      value: overdueRows.length,
+      hint: "Unpaid past due installments",
+      icon: AlertTriangle,
+      tone: "destructive",
+      to: "/defaulters",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
-        description="Today at a glance — collections, dues, and quick actions."
+        description="Operations overview with live collections, dues, and actionable next steps."
       />
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{campus?.name || "All campuses"}</Badge>
+        <Badge variant="outline">Open dues: {totalDueCount}</Badge>
+        <Badge variant="outline">Updated {lastUpdated.toLocaleTimeString("en-IN")}</Badge>
+      </div>
 
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-6">
-        {hasPermission("canViewAggregateFinancials") && (
-          <StatCard
-            label="Today's Collection"
-            value={inr(todayCollection.data?.total || 0)}
-            icon={IndianRupee}
-            tone="success"
-            hint={
-              Object.entries(todayCollection.data?.byMode || {})
-                .map(([m, v]) => `${modeLabel(m)} ${inr(v as number)}`)
-                .join(" · ") || "No collections yet"
-            }
-          />
-        )}
-        <StatCard
-          label="Pending Dues"
-          value={inr(dues.data?.outstanding || 0)}
-          icon={AlertCircle}
-          tone="destructive"
-          hint={`${dues.data?.overdueCount ?? 0} overdue installments`}
-        />
-        <StatCard
-          label="Due Today"
-          value={dues.data?.dueToday ?? 0}
-          icon={CalendarClock}
-          tone="warning"
-          hint="Installments awaiting payment"
-        />
-        <StatCard
-          label="New Enrollments"
-          value={newEnrollments.data?.month ?? 0}
-          icon={Users}
-          tone="info"
-          hint={`${newEnrollments.data?.week ?? 0} this week`}
-        />
-        <StatCard
-          label="Due This Week"
-          value={dueBuckets.data?.dueThisWeek?.length ?? 0}
-          icon={CalendarClock}
-          tone="warning"
-          hint="Upcoming installments in next 7 days"
-        />
-        <StatCard
-          label="Overdue Installments"
-          value={dueBuckets.data?.overdue?.length ?? 0}
-          icon={AlertTriangle}
-          tone="destructive"
-          hint="Unpaid past due installments"
-        />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {kpis
+          .filter((k) => k.show !== false)
+          .map((kpi) => (
+            <Link
+              key={kpi.key}
+              to={kpi.to}
+              className="group block rounded-xl ring-offset-background transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <StatCard
+                label={kpi.label}
+                value={kpi.value}
+                icon={kpi.icon}
+                tone={kpi.tone}
+                hint={kpi.hint}
+              />
+            </Link>
+          ))}
       </div>
 
       <ClickthroughChecklist />
@@ -185,7 +238,9 @@ function Dashboard() {
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No receipts yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No receipts yet for this campus selection.
+              </p>
             )}
           </CardContent>
         </Card>
@@ -198,7 +253,7 @@ function Dashboard() {
             {hasPermission("canEnrollStudents") && (
               <Button asChild variant="default" className="w-full justify-start">
                 <Link to="/enroll">
-                  <UserPlus className="h-4 w-4" /> Enrol Student
+                  <UserPlus className="h-4 w-4" /> Enroll Student
                 </Link>
               </Button>
             )}
@@ -217,11 +272,62 @@ function Dashboard() {
                 <AlertTriangle className="h-4 w-4" /> View Defaulters
               </Link>
             </Button>
+            <Button asChild variant="ghost" className="w-full justify-start">
+              <Link to="/reports">
+                <ArrowRight className="h-4 w-4" /> Open Full Reports
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Priority Follow-up (Live Dues)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {overdueRows.length || dueTodayRows.length ? (
+              <div className="space-y-3">
+                {[...overdueRows.slice(0, 4), ...dueTodayRows.slice(0, 4)].map((row: any) => {
+                  const pending = Math.max(0, Number(row.amount) - Number(row.amount_paid));
+                  const isOverdue = String(row.due_date) < today;
+                  return (
+                    <div key={row.id} className="rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-medium text-foreground">
+                            {row.student_name || "Student"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.admission_number || "—"} · Installment {row.installment_no}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{inr(pending)}</div>
+                          <StatusBadge status={isOverdue ? "overdue" : "pending"} />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Due {fmtDate(row.due_date)}</span>
+                        <Link
+                          to="/students/$studentId"
+                          params={{ studentId: row.student_id }}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          Open student
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No due items in current window.</p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Batch Occupancy</CardTitle>
@@ -230,10 +336,7 @@ function Dashboard() {
             {batches.data?.length ? (
               <div className="space-y-3">
                 {batches.data.map((b: any) => {
-                  const pct = Math.min(
-                    100,
-                    Math.round((b.enrolled / Math.max(1, b.capacity)) * 100),
-                  );
+                  const pct = Math.min(100, Math.round((b.enrolled / Math.max(1, b.capacity)) * 100));
                   return (
                     <div key={b.id}>
                       <div className="flex items-center justify-between text-sm">
@@ -248,7 +351,7 @@ function Dashboard() {
                       <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full rounded-full bg-[var(--gradient-primary)]"
-                          style={{ width: pct + "%" }}
+                          style={{ width: `${pct}%` }}
                         />
                       </div>
                     </div>
@@ -256,23 +359,14 @@ function Dashboard() {
                 })}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No batches yet.</p>
+              <p className="text-sm text-muted-foreground">No active batches found.</p>
             )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Today, {fmtDate(new Date())}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Welcome to ENA Fees Management. Use the sidebar to access modules. Every receipt is
-              sequentially numbered and audited.
+            <div className="mt-4 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+              Today is {fmtDate(new Date())}.{" "}
               {isAdmin
-                ? " As an Admin you have access to all modules."
-                : " As an Accountant you can collect fees, clear dues, and view ledgers."}
-            </p>
+                ? "You can drill down into reports, user controls, and audit from quick actions."
+                : "Use Collect Fee and Defaulters to close the daily pending dues quickly."}
+            </div>
           </CardContent>
         </Card>
       </div>

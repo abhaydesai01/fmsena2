@@ -12,7 +12,13 @@ import { ShieldCheck, Calculator, ArrowLeft, UserPlus } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
-    const session = await getSessionFn();
+    let session = null;
+    try {
+      session = await getSessionFn();
+    } catch {
+      // If session check fails, keep user on login instead of hard-failing route.
+      return;
+    }
     if (session) throw redirect({ to: "/dashboard" });
   },
   component: LoginPage,

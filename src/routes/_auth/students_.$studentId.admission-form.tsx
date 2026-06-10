@@ -99,7 +99,7 @@ function AdmissionFormPage() {
   const mobileSecondary = String(s.mobile_secondary || "—");
 
   return (
-    <div className="space-y-3 print:space-y-0">
+    <div id="admission-print" className="space-y-3 print:space-y-0">
       <style>{`
         @page { size: A4; margin: 10mm; }
         @media print {

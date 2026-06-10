@@ -3,7 +3,13 @@ import { getSessionFn } from "@/fns/auth";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
-    const session = await getSessionFn();
+    let session = null;
+    try {
+      session = await getSessionFn();
+    } catch {
+      // Transient session fetch errors should still land user on login.
+      throw redirect({ to: "/login" });
+    }
     if (session) throw redirect({ to: "/dashboard" });
     throw redirect({ to: "/login" });
   },

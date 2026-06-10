@@ -605,16 +605,20 @@ function EnrollFlow({ actorName, actorRole }: { actorName: string; actorRole: Ap
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="plan_3">{PLAN_LABEL.plan_3} · Jun / Aug / Oct</SelectItem>
+                  <SelectItem value="plan_3">{PLAN_LABEL.plan_3} · J +0 / +60 / +120 days</SelectItem>
                   <SelectItem value="plan_4">
-                    {PLAN_LABEL.plan_4} · Jun / Aug / Oct / Nov
+                    {PLAN_LABEL.plan_4} · J +0 / +60 / +120 / +150 days
                   </SelectItem>
                   <SelectItem value="plan_5">
-                    {PLAN_LABEL.plan_5} · Jun / Aug / Oct / Nov / Dec
+                    {PLAN_LABEL.plan_5} · J +0 / +60 / +120 / +150 / +180 days
                   </SelectItem>
                 </SelectContent>
               </Select>
             </Field>
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary md:col-span-2">
+              Formula: 1st installment = Joining Date, then +60, +120, +150, +180 days (as
+              applicable by selected plan).
+            </div>
             <Field label="Concession (₹)">
               <Input
                 type="number"

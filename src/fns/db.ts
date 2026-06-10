@@ -17,7 +17,7 @@ if (typeof require === "undefined") {
 
 const MONGO_URI =
   process.env.MONGO_URI ||
-  "mongodb+srv://abhaydesai3_db_user:3HqcfRs5U35wH39a@cluster0.djydanj.mongodb.net/?appName=Cluster0";
+  "";
 const DB_NAME = process.env.MONGO_DB_NAME || "fmsena";
 
 let _client: MongoClient | null = null;
@@ -52,6 +52,9 @@ async function ensureIndexes(db: Db) {
 }
 
 export async function getDb(): Promise<Db> {
+  if (!MONGO_URI) {
+    throw new Error("MONGO_URI is required. Set it in your environment.");
+  }
   if (!_client) {
     _client = new MongoClient(MONGO_URI, {
       serverSelectionTimeoutMS: 10000,

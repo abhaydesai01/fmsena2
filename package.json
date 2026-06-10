@@ -16,8 +16,10 @@
     "start": "node node-server.mjs",
     "migrate:dates": "node scripts/migrate-joining-registration-dates.mjs",
     "cron:reminders": "node scripts/cron-reminders.mjs",
+    "cleanup:qa": "node scripts/cleanup-qa-data.mjs",
     "qa:core": "node scripts/qa-core-product.mjs",
     "qa:regression": "node scripts/qa-regression-modules.mjs",
+    "qa:prd": "node scripts/qa-prd-checklist.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

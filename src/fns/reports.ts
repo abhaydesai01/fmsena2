@@ -267,10 +267,35 @@ export const getInstallmentDueBucketsFn = createServerFn({ method: "GET" })
     if (studentIds) filter.student_id = { $in: studentIds };
     const docs = await db.collection("installments").find(filter).sort({ due_date: 1 }).toArray();
     const rows = toObjs(docs);
+    const dueStudentIds = [...new Set(rows.map((r: any) => r.student_id).filter(Boolean))];
+    const students = dueStudentIds.length
+      ? await db
+          .collection("students")
+          .find({ _id: { $in: dueStudentIds.map(safeOId) } })
+          .project({ full_name: 1, admission_number: 1 })
+          .toArray()
+      : [];
+    const sMap: Record<string, { full_name: string; admission_number: string }> = {};
+    for (const s of students) {
+      sMap[s._id.toString()] = {
+        full_name: String(s.full_name || ""),
+        admission_number: String(s.admission_number || ""),
+      };
+    }
+
+    const mapRow = (r: any) => ({
+      ...r,
+      student_name: sMap[String(r.student_id)]?.full_name || null,
+      admission_number: sMap[String(r.student_id)]?.admission_number || null,
+    });
     const dueToday = rows.filter((r: any) => r.due_date === todayIso);
     const dueThisWeek = rows.filter((r: any) => r.due_date > todayIso && r.due_date <= weekEndIso);
     const overdue = rows.filter((r: any) => r.due_date < todayIso);
-    return { dueToday, dueThisWeek, overdue };
+    return {
+      dueToday: dueToday.map(mapRow),
+      dueThisWeek: dueThisWeek.map(mapRow),
+      overdue: overdue.map(mapRow),
+    };
   });
 
 export const runAutomatedRemindersFn = createServerFn({ method: "POST" })

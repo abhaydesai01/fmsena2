@@ -6,7 +6,7 @@ import dns from "node:dns";
 const BASE_URL = process.env.QA_BASE_URL || "http://localhost:8082";
 const MONGO_URI =
   process.env.MONGO_URI ||
-  "mongodb+srv://abhaydesai3_db_user:3HqcfRs5U35wH39a@cluster0.djydanj.mongodb.net/?appName=Cluster0";
+  "";
 const DB_NAME = process.env.MONGO_DB_NAME || "fmsena";
 
 const adminEmail = "qa.admin.rbac@example.com";
@@ -88,6 +88,7 @@ function record(name, pass, details = "") {
 }
 
 async function main() {
+  if (!MONGO_URI) throw new Error("MONGO_URI is required");
   const mongo = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 15000 });
   await mongo.connect();
   const db = mongo.db(DB_NAME);

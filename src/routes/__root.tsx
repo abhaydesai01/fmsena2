@@ -76,6 +76,8 @@ function RootShell({ children }: { children: React.ReactNode }) {
       <body>
         <div
           id="preview-mount-watchdog"
+          data-mounted="0"
+          suppressHydrationWarning
           style={{
             display: "none",
             position: "fixed",

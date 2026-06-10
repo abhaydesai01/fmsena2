@@ -183,7 +183,8 @@
 
 @media print {
   body * { visibility: hidden !important; }
-  #receipt-print, #receipt-print * { visibility: visible !important; }
+  #receipt-print, #receipt-print *,
+  #admission-print, #admission-print * { visibility: visible !important; }
   #receipt-print {
     position: absolute !important;
     left: 0; top: 0;
@@ -191,5 +192,10 @@
     background: white !important;
     color: black !important;
     border: none !important;
+  }
+  #admission-print {
+    position: static !important;
+    background: white !important;
+    color: black !important;
   }
 }
