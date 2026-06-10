@@ -1,7 +1,10 @@
-## Build this Vite app and publish static client files
+## Build the Vite app + generate index.html SPA shell via SSR
 [build]
-  command = "npm run build"
+  command = "npm run build:netlify"
   publish = "dist/client"
+
+[build.environment]
+  NODE_VERSION = "20"
 
 ## Proxy TanStack Start server function calls to backend (EC2)
 ## Replace with your actual backend domain after EC2 setup.

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:netlify": "vite build && node scripts/generate-static.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
